@@ -93,6 +93,44 @@ class SpritersClient:
             pass
         return None
 
+    # -- cloudscraper (resolve desafios Cloudflare sem navegador) -----------
+
+    def _get_cloudscraper(self):
+        if getattr(self, "_cloudscraper", None) is None:
+            try:
+                import cloudscraper
+
+                self._cloudscraper = cloudscraper.create_scraper(
+                    browser={"browser": "chrome", "platform": "windows", "desktop": True}
+                )
+            except Exception:
+                self._cloudscraper = False  # indisponivel
+        return self._cloudscraper or None
+
+    def _try_cloudscraper(self, url: str) -> str | None:
+        scraper_session = self._get_cloudscraper()
+        if scraper_session is None:
+            return None
+        try:
+            resp = scraper_session.get(url, timeout=45)
+            if resp.status_code == 200 and "/sheet/" in resp.text:
+                return resp.text
+        except Exception:
+            pass
+        return None
+
+    def _try_cloudscraper_bytes(self, url: str) -> bytes | None:
+        scraper_session = self._get_cloudscraper()
+        if scraper_session is None:
+            return None
+        try:
+            resp = scraper_session.get(url, timeout=60)
+            if resp.status_code == 200 and resp.content[:8].startswith(b"\x89PNG"):
+                return resp.content
+        except Exception:
+            pass
+        return None
+
     # -- Playwright ---------------------------------------------------------
 
     def _ensure_browser(self):
@@ -101,8 +139,12 @@ class SpritersClient:
         from playwright.sync_api import sync_playwright
 
         self._playwright = sync_playwright().start()
+        launch_kwargs = dict(
+            headless=self.headless,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+        )
         try:
-            self._browser = self._playwright.chromium.launch(headless=self.headless)
+            self._browser = self._playwright.chromium.launch(**launch_kwargs)
         except Exception:
             # Em hospedagem na nuvem (ex.: Streamlit Community Cloud) o
             # navegador do Playwright nunca foi baixado. Instala uma unica
@@ -116,10 +158,18 @@ class SpritersClient:
                 capture_output=True,
                 timeout=600,
             )
-            self._browser = self._playwright.chromium.launch(headless=self.headless)
+            self._browser = self._playwright.chromium.launch(**launch_kwargs)
         self._context = self._browser.new_context(
             user_agent=BROWSER_HEADERS["User-Agent"],
             locale="en-US",
+            viewport={"width": 1366, "height": 900},
+        )
+        # "Stealth": esconde os sinais de automacao que o Cloudflare procura.
+        self._context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+            "window.chrome = window.chrome || {runtime: {}};"
+            "Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en', 'pt-BR']});"
+            "Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});"
         )
         self._page = self._context.new_page()
 
@@ -127,7 +177,7 @@ class SpritersClient:
         self._ensure_browser()
         self._page.goto(url, wait_until="domcontentloaded", timeout=60_000)
         # Da tempo ao desafio do Cloudflare ("Just a moment...") de resolver.
-        for _ in range(20):
+        for _ in range(45):
             title = (self._page.title() or "").lower()
             if "just a moment" not in title and "attention required" not in title:
                 break
@@ -148,10 +198,16 @@ class SpritersClient:
         html = self._try_requests(url)
         if html:
             return html
+        html = self._try_cloudscraper(url)
+        if html:
+            return html
         return self._playwright_html(url)
 
     def get_bytes(self, url: str) -> bytes:
         data = self._try_requests_bytes(url)
+        if data:
+            return data
+        data = self._try_cloudscraper_bytes(url)
         if data:
             return data
         return self._playwright_bytes(url)
@@ -180,6 +236,10 @@ class SpritersClient:
 # ---------------------------------------------------------------------------
 # Indexacao
 # ---------------------------------------------------------------------------
+
+def _page_title(html: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    return match.group(1).strip()[:80] if match else "(sem titulo)"
 
 def _parse_game_page(html: str) -> list[SheetEntry]:
     """
@@ -260,9 +320,24 @@ def build_index(force: bool = False, client: SpritersClient | None = None) -> li
         html = client.get_html(GAME_URL)
         entries = _parse_game_page(html)
         if not entries:
+            lower = html.lower()
+            if any(
+                marker in lower
+                for marker in (
+                    "just a moment", "attention required", "cf-challenge",
+                    "challenge-platform", "verify you are human", "cloudflare",
+                )
+            ):
+                raise RuntimeError(
+                    "BLOQUEIO DO CLOUDFLARE: o site recusou o acesso a partir "
+                    "deste servidor (IPs de nuvem/datacenter costumam ser "
+                    "barrados). A busca automatica funciona rodando o app no "
+                    "seu computador; na nuvem, use a aba de upload manual."
+                )
             raise RuntimeError(
-                "Nenhum sheet encontrado na pagina — o site pode ter mudado "
-                "de layout ou o Cloudflare bloqueou o acesso."
+                "Nenhum sheet encontrado na pagina — o layout do site pode "
+                "ter mudado. Abra uma issue ou use a aba de upload manual. "
+                f"(titulo da pagina recebida: {_page_title(html)!r})"
             )
         INDEX_FILE.write_text(
             json.dumps([asdict(e) for e in entries], ensure_ascii=False, indent=2),

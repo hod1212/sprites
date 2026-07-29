@@ -5,6 +5,7 @@ streamlit>=1.36.0
 requests>=2.32.0
 beautifulsoup4>=4.12.0
 playwright>=1.45.0          # Navegador real (necessario para passar pelo Cloudflare do Spriters Resource)
+cloudscraper>=1.2.71        # Resolve desafios Cloudflare sem navegador (2a tentativa, mais leve)
 
 # --- Processamento de Imagem ---
 pillow>=10.3.0
