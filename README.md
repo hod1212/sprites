@@ -127,6 +127,52 @@ python gemini_transform.py data/downloads/arquivo.png "Sci-Fi / Cyberpunk"
 
 ---
 
+## 📱 Rodando no celular (Android/iPhone)
+
+O aplicativo é uma página web — então no celular ele roda pelo **navegador**,
+sem instalar nada. Duas formas:
+
+### Opção 1 — Publicar na nuvem (recomendada, grátis)
+
+O repositório já vem preparado para o [Streamlit Community Cloud](https://share.streamlit.io):
+
+1. Acesse **https://share.streamlit.io** e faça login com a sua conta do GitHub.
+2. Clique em **"Create app"** → **"Deploy a public app from GitHub"**.
+3. Selecione o repositório **`hod1212/sprites`**, branch
+   `claude/ragnarok-sprite-generator-5cgyoa` (ou `main`, se já tiver feito o
+   merge) e o arquivo **`app.py`** → **Deploy**.
+4. Em ~3 minutos você recebe uma URL pública (ex.:
+   `https://seuapp.streamlit.app`). Abra-a no navegador do celular e, no menu
+   do Chrome, use **"Adicionar à tela inicial"** — vira um ícone como o de um
+   app nativo.
+
+Observações importantes:
+
+- **Não** salve sua chave do Gemini no código: como o app fica público, cole a
+  chave na **barra lateral** a cada uso, ou restrinja em *Settings → Secrets*
+  do Streamlit Cloud adicionando `GEMINI_API_KEY = "sua-chave"` (aí qualquer
+  pessoa com a URL gasta a sua cota — prefira a barra lateral).
+- A busca automática no Spriters Resource pode falhar na nuvem, pois o
+  Cloudflare costuma bloquear IPs de datacenter mesmo com navegador real.
+  Nesse caso use a aba **"Enviar meu próprio sprite"** — baixe o PNG pelo
+  navegador do celular e envie; todo o resto (fatiamento + Gemini) funciona
+  normalmente.
+
+### Opção 2 — Servir do seu PC para o celular (mesma rede Wi-Fi)
+
+No PC, rode:
+
+```bash
+streamlit run app.py --server.address 0.0.0.0
+```
+
+Descubra o IP do PC (`ipconfig` no Windows, campo "Endereço IPv4", ex.:
+`192.168.0.15`) e abra no navegador do celular:
+`http://192.168.0.15:8501`. Aqui a busca automática funciona 100%, pois usa a
+sua internet residencial.
+
+---
+
 ## 🧠 Decisões de arquitetura (resumo para não-programadores)
 
 | Escolha | Por quê |

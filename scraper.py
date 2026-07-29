@@ -101,7 +101,22 @@ class SpritersClient:
         from playwright.sync_api import sync_playwright
 
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(headless=self.headless)
+        try:
+            self._browser = self._playwright.chromium.launch(headless=self.headless)
+        except Exception:
+            # Em hospedagem na nuvem (ex.: Streamlit Community Cloud) o
+            # navegador do Playwright nunca foi baixado. Instala uma unica
+            # vez e tenta de novo.
+            import subprocess
+            import sys
+
+            subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"],
+                check=False,
+                capture_output=True,
+                timeout=600,
+            )
+            self._browser = self._playwright.chromium.launch(headless=self.headless)
         self._context = self._browser.new_context(
             user_agent=BROWSER_HEADERS["User-Agent"],
             locale="en-US",
