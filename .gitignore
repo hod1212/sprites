@@ -1,0 +1,15 @@
+# Segredos
+.env
+
+# Dados gerados em tempo de execucao
+data/
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
