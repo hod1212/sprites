@@ -121,6 +121,36 @@ O navegador abre automaticamente em `http://localhost:8501`. Fluxo de uso:
 
 ---
 
+## 🤖 Motores de IA: Gemini x Pollinations (grátis)
+
+O app tem um seletor **"Motor de IA"** com duas opções:
+
+| | ✨ Gemini (padrão) | 🆓 Pollinations.ai |
+| --- | --- | --- |
+| **Custo** | Grátis com **cota diária** (chave do aistudio.google.com, sem cartão) | 100% grátis, ilimitado na prática |
+| **Chave/cadastro** | Precisa da chave | **Nenhum** |
+| **Qualidade** | Melhor | Boa (modelo FLUX Kontext) |
+| **Velocidade** | ~10-30 s | ~30-120 s (serviço comunitário, oscila) |
+| **Confiabilidade** | Alta | Média — pode ficar fora do ar em picos |
+
+**Quando usar o Pollinations:** quando a cota diária gratuita do Gemini acabar,
+ou se você preferir não criar chave nenhuma. Se uma geração falhar por
+sobrecarga, espere 1-2 minutos e tente de novo — ou volte ao Gemini.
+
+**Privacidade no modo Pollinations:** para o serviço enxergar seu sprite, o
+app o envia temporariamente ao hospedeiro **tmpfiles.org** (o arquivo é
+apagado automaticamente em ~60 minutos) e ao **Pollinations.ai**. O app avisa
+isso na tela. Se preferir que a imagem não saia do circuito Google, use o
+Gemini.
+
+> Por que não outras IAs? O pipeline depende de *edição de imagem guiada por
+> instruções* ("mantenha a pose, troque a armadura"). O img2img clássico do
+> Stable Diffusion não obedece esse tipo de regra — ele repinta a imagem toda.
+> Os modelos gratuitos que obedecem são raros; o FLUX Kontext (via
+> Pollinations) é o melhor deles hoje.
+
+---
+
 ## 🎚️ Grau de alteração (1 a 10)
 
 Antes de gerar, você define **quanto** o sprite deve ser alterado. Isso dá

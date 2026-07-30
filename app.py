@@ -35,6 +35,7 @@ from pathlib import Path
 import streamlit as st
 from PIL import Image
 
+import pollinations_ai
 import scraper
 import sprite_tools
 from gemini_transform import (
@@ -200,12 +201,38 @@ def campo_da_chave() -> None:
     )
 
 
+# --- Motor de IA -----------------------------------------------------------
+MOTOR_GEMINI = "✨ Gemini — melhor qualidade (chave grátis com cota diária)"
+MOTOR_POLLINATIONS = "🆓 Pollinations.ai — 100% grátis, sem chave (experimental)"
+
+motor = st.radio(
+    "🤖 Motor de IA",
+    [MOTOR_GEMINI, MOTOR_POLLINATIONS],
+    key="motor_ia",
+    help="O Gemini dá os melhores resultados (a chave do aistudio.google.com "
+    "é gratuita, com cota diária). O Pollinations é um serviço comunitário "
+    "gratuito e sem cadastro — útil quando a cota do Gemini acabar, mas pode "
+    "ficar lento ou fora do ar em horários de pico.",
+)
+usando_pollinations = motor == MOTOR_POLLINATIONS
+
+if usando_pollinations:
+    st.info(
+        "🆓 **Modo Pollinations**: nenhuma chave é necessária. Atenção: para "
+        "processar, seu sprite é enviado temporariamente ao serviço de "
+        "hospedagem tmpfiles.org (apagado em ~60 min) e ao Pollinations.ai. "
+        "Se a geração falhar por sobrecarga, tente de novo ou volte ao Gemini."
+    )
+
 if api_key:
     with st.expander("🔑 Chave da API configurada ✅ — toque para alterar", expanded=False):
         campo_da_chave()
         if st.button("🗑️ Esquecer a chave desta sessão"):
             st.session_state["_esquecer_chave"] = True
             st.rerun()
+elif usando_pollinations:
+    with st.expander("🔑 Chave do Gemini (não é necessária no modo Pollinations)"):
+        campo_da_chave()
 else:
     with st.container(border=True):
         st.markdown("#### 🔑 Primeiro, cole a sua chave da API do Gemini")
@@ -213,6 +240,9 @@ else:
 
 remember_api_key("api_key_main")
 api_key = st.session_state[KEY_STORE] or stored_key
+
+# Pronto para gerar: Pollinations dispensa chave; Gemini exige.
+pode_gerar = usando_pollinations or bool(api_key)
 
 def seletor_de_sprite(sheet: Image.Image, nome: str, prefixo: str) -> dict:
     """
@@ -385,28 +415,40 @@ with st.expander("📋 Ver a regra exata enviada à IA neste grau"):
 if base_sprite is None:
     st.info("👆 Busque um sprite ou envie um arquivo para habilitar a transformação.")
 else:
-    if not api_key:
+    if not pode_gerar:
         st.warning(
             "🔑 Cole a sua chave da API do Gemini no campo acima (ou no menu ☰ → "
-            "Configurações) para habilitar a geração."
+            "Configurações) — ou troque o Motor de IA para o Pollinations, que "
+            "não precisa de chave."
         )
+    nome_motor = "Pollinations" if usando_pollinations else "Gemini"
     if st.button(
-        "✨ Transformar sprite com Gemini",
+        f"✨ Transformar sprite com {nome_motor}",
         type="primary",
         use_container_width=True,
-        disabled=not api_key,
+        disabled=not pode_gerar,
     ):
         prepared = sprite_tools.prepare_for_gemini(base_sprite)
         try:
-            with st.spinner("O Gemini está reimaginando seu sprite... (~10-30 s)"):
-                result, used_prompt = transform_sprite(
-                    prepared,
-                    filter_name=filter_name,
-                    extra_instructions=extra,
-                    custom_style=custom_style,
-                    intensity=intensidade,
-                    api_key=api_key or None,
-                )
+            demora = "~30-120 s" if usando_pollinations else "~10-30 s"
+            with st.spinner(f"O {nome_motor} está reimaginando seu sprite... ({demora})"):
+                if usando_pollinations:
+                    result, used_prompt = pollinations_ai.transform_sprite(
+                        prepared,
+                        filter_name=filter_name,
+                        extra_instructions=extra,
+                        custom_style=custom_style,
+                        intensity=intensidade,
+                    )
+                else:
+                    result, used_prompt = transform_sprite(
+                        prepared,
+                        filter_name=filter_name,
+                        extra_instructions=extra,
+                        custom_style=custom_style,
+                        intensity=intensidade,
+                        api_key=api_key or None,
+                    )
             final = sprite_tools.remove_background(result)
             st.session_state["result"] = final
             st.session_state["result_prompt"] = used_prompt
@@ -532,31 +574,44 @@ if personagem is not None:
         key="extra_anim",
     )
 
-    if not api_key:
-        st.warning("🔑 Configure a chave da API acima para habilitar a geração.")
+    if not pode_gerar:
+        st.warning(
+            "🔑 Configure a chave da API acima — ou troque o Motor de IA para "
+            "o Pollinations, que não precisa de chave."
+        )
 
     if st.button(
         f"🎬 Gerar animação de {n_quadros} quadros",
         type="primary",
         use_container_width=True,
-        disabled=not api_key,
+        disabled=not pode_gerar,
         key="btn_anim",
     ):
         base_personagem = sprite_tools.prepare_for_gemini(personagem, target_size=640)
         assinatura = f"{origem_personagem}|{acao_nome}|{acao_custom}|{n_quadros}|{metodo}"
         try:
             if metodo.startswith("🧷"):
+                demora = "~1-3 min" if usando_pollinations else "~15-45 s"
                 with st.spinner(
-                    f"Gerando a tira com {n_quadros} poses em uma única chamada..."
+                    f"Gerando a tira com {n_quadros} poses em uma única chamada... ({demora})"
                 ):
-                    tira, prompt_anim = generate_action_sheet(
-                        base_personagem,
-                        action_name=acao_nome,
-                        n_frames=n_quadros,
-                        custom_action=acao_custom,
-                        extra_instructions=extra_anim,
-                        api_key=api_key or None,
-                    )
+                    if usando_pollinations:
+                        tira, prompt_anim = pollinations_ai.generate_action_sheet(
+                            base_personagem,
+                            action_name=acao_nome,
+                            n_frames=n_quadros,
+                            custom_action=acao_custom,
+                            extra_instructions=extra_anim,
+                        )
+                    else:
+                        tira, prompt_anim = generate_action_sheet(
+                            base_personagem,
+                            action_name=acao_nome,
+                            n_frames=n_quadros,
+                            custom_action=acao_custom,
+                            extra_instructions=extra_anim,
+                            api_key=api_key or None,
+                        )
                 quadros = sprite_tools.split_strip(tira, n_quadros)
                 falhas_anim: list[tuple[int, str]] = []
                 st.session_state["anim_tira"] = sprite_tools.remove_background(tira)
@@ -566,15 +621,25 @@ if personagem is not None:
                 def atualizar(feitos: int, total: int, mensagem: str) -> None:
                     barra.progress(feitos / total, text=f"{mensagem} ({feitos}/{total})")
 
-                resultados = generate_action_frames(
-                    base_personagem,
-                    action_name=acao_nome,
-                    n_frames=n_quadros,
-                    custom_action=acao_custom,
-                    extra_instructions=extra_anim,
-                    api_key=api_key or None,
-                    progress_callback=atualizar,
-                )
+                if usando_pollinations:
+                    resultados = pollinations_ai.generate_action_frames(
+                        base_personagem,
+                        action_name=acao_nome,
+                        n_frames=n_quadros,
+                        custom_action=acao_custom,
+                        extra_instructions=extra_anim,
+                        progress_callback=atualizar,
+                    )
+                else:
+                    resultados = generate_action_frames(
+                        base_personagem,
+                        action_name=acao_nome,
+                        n_frames=n_quadros,
+                        custom_action=acao_custom,
+                        extra_instructions=extra_anim,
+                        api_key=api_key or None,
+                        progress_callback=atualizar,
+                    )
                 barra.empty()
                 quadros = [
                     sprite_tools.remove_background(r.image) for r in resultados if r.ok
