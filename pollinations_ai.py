@@ -1,11 +1,26 @@
 """
-Provedor alternativo GRATUITO: Pollinations.ai (modelo FLUX Kontext).
+Provedor alternativo: Pollinations.ai (modelo FLUX Kontext).
 
-O Pollinations e' um servico comunitario de geracao de imagens que nao exige
-chave de API nem cadastro. O modelo "kontext" (FLUX.1 Kontext) faz edicao de
-imagem guiada por instrucoes — o mesmo paradigma Img2Img que usamos no Gemini.
+IMPORTANTE — correcao de uma informacao anterior: o Pollinations NAO e'
+totalmente "sem chave". Segundo a documentacao oficial
+(github.com/pollinations/pollinations/blob/master/APIDOCS.md), existem tres
+niveis de acesso:
 
-Funcionamento e limitacoes (por isso o rotulo "experimental" na interface):
+  - Anonimo (sem chave): funciona sem cadastro, mas e' limitado a ~1
+    requisicao a cada 15s e as imagens SAEM COM MARCA D'AGUA (o parametro
+    "nologo" e' documentado como "needs account" — ou seja, so' funciona de
+    verdade com uma chave/conta).
+  - "Seed" (cadastro gratuito em auth.pollinations.ai): ~1 requisicao a cada
+    5s e SEM marca d'agua.
+  - "Flower/Nectar" (pago): limites maiores, para uso intenso.
+
+Ou seja: da' para usar sem nenhuma chave (e por isso o motor continua
+disponivel de graca nesta ferramenta), mas o resultado real sem chave inclui
+marca d'agua e um limite de velocidade maior. Quem tiver uma chave/token do
+Pollinations pode informa-la no app para remover a marca d'agua e acelerar as
+geracoes — o campo e' opcional.
+
+Funcionamento tecnico:
   - A API e' um simples GET: image.pollinations.ai/prompt/<texto>?image=<url>
   - A imagem de entrada precisa estar acessivel por URL publica. Como o sprite
     do usuario e' local, subimos o PNG para o tmpfiles.org, um hospedeiro
@@ -15,6 +30,11 @@ Funcionamento e limitacoes (por isso o rotulo "experimental" na interface):
   - O FLUX Kontext responde melhor a instrucoes curtas em ingles; os prompts
     daqui sao versoes condensadas em ingles dos prompts do Gemini, com as
     descricoes de estilo/pose embutidas.
+  - A documentacao oficial nao detalha o formato exato de autenticacao para o
+    endpoint de IMAGEM (so' exemplifica para o endpoint de texto). Por isso,
+    quando uma chave e' informada, ela e' enviada de duas formas ao mesmo
+    tempo — como parametro "token" na URL e como cabecalho "Authorization:
+    Bearer" — para maximizar a chance de ser reconhecida.
 
 Nenhuma dependencia nova: usa apenas `requests` e `Pillow`.
 """
@@ -96,6 +116,7 @@ def _generate(
     reference: Image.Image,
     width: int,
     height: int,
+    api_key: str | None = None,
     max_retries: int = 2,
 ) -> Image.Image:
     """Uma chamada de edicao de imagem ao Pollinations, com retry."""
@@ -105,22 +126,39 @@ def _generate(
         "image": ref_url,
         "width": width,
         "height": height,
-        "nologo": "true",     # sem marca d'agua
+        "nologo": "true",     # so' remove a marca d'agua de fato com chave
         "private": "true",    # nao publicar no feed publico do servico
         "enhance": "false",   # NAO reescrever o prompt (mudaria as regras)
         "referrer": REFERRER,
         "seed": random.randint(0, 2**31 - 1),
     }
+    headers = {}
+    if api_key:
+        # A documentacao oficial nao especifica o formato exato para o
+        # endpoint de imagem, entao enviamos dos dois jeitos usados pelo
+        # restante da API do Pollinations (token na URL + Bearer no cabecalho).
+        params["token"] = api_key
+        headers["Authorization"] = f"Bearer {api_key}"
+
     url = IMAGE_ENDPOINT + urllib.parse.quote(prompt[:1800], safe="")
 
     last_error: Exception | None = None
     for attempt in range(max_retries):
         try:
-            resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+            resp = requests.get(
+                url, params=params, headers=headers, timeout=REQUEST_TIMEOUT
+            )
             if resp.status_code == 200 and resp.headers.get(
                 "content-type", ""
             ).startswith("image/"):
                 return Image.open(io.BytesIO(resp.content)).convert("RGBA")
+            if resp.status_code in (401, 403):
+                raise PollinationsError(
+                    "O Pollinations recusou a chave informada (HTTP "
+                    f"{resp.status_code}). Confira se ela foi copiada "
+                    "corretamente em auth.pollinations.ai, ou remova o "
+                    "campo para usar o modo anônimo (com marca d'água)."
+                )
             last_error = RuntimeError(
                 f"resposta inesperada (HTTP {resp.status_code})"
             )
@@ -129,9 +167,10 @@ def _generate(
         time.sleep(3 * (attempt + 1))
 
     raise PollinationsError(
-        "O Pollinations nao respondeu (servico comunitario gratuito — fica "
-        "sobrecarregado em horarios de pico). Tente novamente em 1-2 minutos "
-        f"ou volte ao motor Gemini. Detalhe tecnico: {last_error}"
+        "O Pollinations nao respondeu (servico comunitario — fica "
+        "sobrecarregado em horarios de pico, e o modo sem chave tem limite "
+        "de 1 requisicao a cada ~15s). Tente novamente em 1-2 minutos, "
+        f"informe uma chave, ou volte ao motor Gemini. Detalhe tecnico: {last_error}"
     )
 
 
@@ -145,8 +184,9 @@ def transform_sprite(
     extra_instructions: str = "",
     custom_style: str = "",
     intensity: int = 7,
+    api_key: str | None = None,
 ) -> tuple[Image.Image, str]:
-    """Equivalente gratuito de gemini_transform.transform_sprite()."""
+    """Equivalente de gemini_transform.transform_sprite(), via Pollinations."""
     style = custom_style.strip() or FILTERS.get(filter_name, filter_name)
     nivel = max(1, min(10, int(intensity)))
     extra = (
@@ -164,7 +204,7 @@ def transform_sprite(
         f"{extra}"
     )
     w, h = base_image.size
-    result = _generate(prompt, base_image, width=w, height=h)
+    result = _generate(prompt, base_image, width=w, height=h, api_key=api_key)
     return result, prompt
 
 
@@ -188,8 +228,9 @@ def generate_action_sheet(
     n_frames: int = 4,
     custom_action: str = "",
     extra_instructions: str = "",
+    api_key: str | None = None,
 ) -> tuple[Image.Image, str]:
-    """Equivalente gratuito de gemini_transform.generate_action_sheet()."""
+    """Equivalente de gemini_transform.generate_action_sheet(), via Pollinations."""
     acao = custom_action.strip() or ACTIONS.get(action_name, {}).get(
         "resumo", action_name
     )
@@ -220,7 +261,7 @@ def generate_action_sheet(
     w, h = character_image.size
     # Tira horizontal: largura proporcional ao numero de quadros
     out_w = min(2048, max(768, h * n_frames))
-    result = _generate(prompt, character_image, width=out_w, height=h)
+    result = _generate(prompt, character_image, width=out_w, height=h, api_key=api_key)
     return result, prompt
 
 
@@ -230,10 +271,11 @@ def generate_action_frames(
     n_frames: int = 4,
     custom_action: str = "",
     extra_instructions: str = "",
+    api_key: str | None = None,
     pause_between: float = 2.0,
     progress_callback=None,
 ) -> list[FrameResult]:
-    """Equivalente gratuito de gemini_transform.generate_action_frames()."""
+    """Equivalente de gemini_transform.generate_action_frames(), via Pollinations."""
     acao = custom_action.strip() or ACTIONS.get(action_name, {}).get(
         "resumo", action_name
     )
@@ -262,8 +304,8 @@ def generate_action_frames(
         )
         try:
             if i and pause_between:
-                time.sleep(pause_between)  # educacao com o servico gratuito
-            image = _generate(prompt, character_image, width=w, height=h)
+                time.sleep(pause_between)  # respeita o limite de requisicoes
+            image = _generate(prompt, character_image, width=w, height=h, api_key=api_key)
             resultados.append(FrameResult(i, image))
         except Exception as exc:
             resultados.append(FrameResult(i, None, error=str(exc)))

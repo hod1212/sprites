@@ -203,7 +203,7 @@ def campo_da_chave() -> None:
 
 # --- Motor de IA -----------------------------------------------------------
 MOTOR_GEMINI = "✨ Gemini — melhor qualidade (chave grátis com cota diária)"
-MOTOR_POLLINATIONS = "🆓 Pollinations.ai — 100% grátis, sem chave (experimental)"
+MOTOR_POLLINATIONS = "🆓 Pollinations.ai — grátis, com ou sem chave"
 
 motor = st.radio(
     "🤖 Motor de IA",
@@ -211,18 +211,59 @@ motor = st.radio(
     key="motor_ia",
     help="O Gemini dá os melhores resultados (a chave do aistudio.google.com "
     "é gratuita, com cota diária). O Pollinations é um serviço comunitário "
-    "gratuito e sem cadastro — útil quando a cota do Gemini acabar, mas pode "
-    "ficar lento ou fora do ar em horários de pico.",
+    "que funciona sem cadastro, mas com marca d'água e mais lento — ou com "
+    "uma chave gratuita opcional, sem marca d'água e mais rápido.",
 )
 usando_pollinations = motor == MOTOR_POLLINATIONS
 
+# Chave opcional do Pollinations — mesma técnica de persistência usada para a
+# chave do Gemini (evita que o Streamlit descarte o valor digitado).
+POLLI_KEY_STORE = "pollinations_api_key_persistente"
+st.session_state.setdefault(POLLI_KEY_STORE, "")
+if st.session_state.pop("_esquecer_chave_pollinations", False):
+    st.session_state[POLLI_KEY_STORE] = ""
+    st.session_state.pop("pollinations_key_field", None)
+
+
+def remember_pollinations_key() -> None:
+    value = (st.session_state.get("pollinations_key_field") or "").strip()
+    if value:
+        st.session_state[POLLI_KEY_STORE] = value
+
+
 if usando_pollinations:
     st.info(
-        "🆓 **Modo Pollinations**: nenhuma chave é necessária. Atenção: para "
-        "processar, seu sprite é enviado temporariamente ao serviço de "
-        "hospedagem tmpfiles.org (apagado em ~60 min) e ao Pollinations.ai. "
-        "Se a geração falhar por sobrecarga, tente de novo ou volte ao Gemini."
+        "🆓 **Modo Pollinations**: funciona sem nenhuma chave. Mas atenção — "
+        "correção importante: **sem chave, as imagens saem com uma pequena "
+        "marca d'água** e o limite é de ~1 geração a cada 15s (o serviço tem "
+        "um plano gratuito com registro que remove a marca e acelera as "
+        "gerações). Além disso, seu sprite é enviado temporariamente ao "
+        "hospedeiro tmpfiles.org (apagado em ~60 min) e ao Pollinations.ai."
     )
+    st.text_input(
+        "🔑 Chave do Pollinations (opcional — remove a marca d'água)",
+        type="password",
+        key="pollinations_key_field",
+        placeholder="Cole aqui se tiver uma chave...",
+        on_change=remember_pollinations_key,
+        help="Crie uma chave grátis em **auth.pollinations.ai** (cadastro "
+        "simples, sem cartão) para remover a marca d'água e ter um limite "
+        "de velocidade maior. Deixe em branco para usar o modo anônimo.",
+    )
+    remember_pollinations_key()
+    pollinations_key = st.session_state[POLLI_KEY_STORE]
+    if pollinations_key:
+        st.success("🔑 Chave do Pollinations configurada — sem marca d'água.")
+        if st.button("🗑️ Esquecer a chave do Pollinations"):
+            st.session_state["_esquecer_chave_pollinations"] = True
+            st.rerun()
+    else:
+        st.caption(
+            "Sem chave: as imagens geradas terão uma pequena marca d'água "
+            "do Pollinations no canto."
+        )
+else:
+    pollinations_key = st.session_state[POLLI_KEY_STORE]
 
 if api_key:
     with st.expander("🔑 Chave da API configurada ✅ — toque para alterar", expanded=False):
@@ -439,6 +480,7 @@ else:
                         extra_instructions=extra,
                         custom_style=custom_style,
                         intensity=intensidade,
+                        api_key=pollinations_key or None,
                     )
                 else:
                     result, used_prompt = transform_sprite(
@@ -623,6 +665,7 @@ if personagem is not None:
                             n_frames=n_quadros,
                             custom_action=acao_custom,
                             extra_instructions=extra_anim,
+                            api_key=pollinations_key or None,
                         )
                     else:
                         tira, prompt_anim = generate_action_sheet(
@@ -649,6 +692,7 @@ if personagem is not None:
                         n_frames=n_quadros,
                         custom_action=acao_custom,
                         extra_instructions=extra_anim,
+                        api_key=pollinations_key or None,
                         progress_callback=atualizar,
                     )
                 else:

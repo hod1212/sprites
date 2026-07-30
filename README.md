@@ -164,15 +164,29 @@ O app tem um seletor **"Motor de IA"** com duas opções:
 
 | | ✨ Gemini (padrão) | 🆓 Pollinations.ai |
 | --- | --- | --- |
-| **Custo** | Grátis com **cota diária** (chave do aistudio.google.com, sem cartão) | 100% grátis, ilimitado na prática |
-| **Chave/cadastro** | Precisa da chave | **Nenhum** |
+| **Custo** | Grátis com **cota diária** (chave do aistudio.google.com, sem cartão) | Grátis, com ou sem chave |
+| **Chave** | Obrigatória | **Opcional** |
 | **Qualidade** | Melhor | Boa (modelo FLUX Kontext) |
 | **Velocidade** | ~10-30 s | ~30-120 s (serviço comunitário, oscila) |
 | **Confiabilidade** | Alta | Média — pode ficar fora do ar em picos |
 
-**Quando usar o Pollinations:** quando a cota diária gratuita do Gemini acabar,
-ou se você preferir não criar chave nenhuma. Se uma geração falhar por
-sobrecarga, espere 1-2 minutos e tente de novo — ou volte ao Gemini.
+> ⚠️ **Correção importante:** uma versão anterior deste README descrevia o
+> Pollinations como "100% grátis, sem chave nenhuma" — isso estava impreciso.
+> Segundo a
+> [documentação oficial](https://github.com/pollinations/pollinations/blob/master/APIDOCS.md),
+> o serviço tem três níveis: **anônimo** (sem chave, mas com marca d'água nas
+> imagens e limite de ~1 geração a cada 15s — o parâmetro que remove a marca
+> é documentado como *"needs account"*), **Seed** (chave gratuita via
+> cadastro em `auth.pollinations.ai`, sem marca d'água e limite de ~1 a cada
+> 5s) e **Flower/Nectar** (pago, para uso intenso). O app funciona sem
+> nenhuma chave, mas agora deixa isso explícito e oferece um campo opcional
+> para colar uma chave gratuita do Pollinations, se você tiver uma.
+
+**Quando usar o Pollinations:** quando a cota diária gratuita do Gemini
+acabar. Sem chave, funciona mas com marca d'água — para removê-la, crie uma
+conta grátis em `auth.pollinations.ai` e cole a chave no campo que aparece
+ao selecionar este motor no app. Se uma geração falhar por sobrecarga, espere
+1-2 minutos e tente de novo — ou volte ao Gemini.
 
 **Privacidade no modo Pollinations:** para o serviço enxergar seu sprite, o
 app o envia temporariamente ao hospedeiro **tmpfiles.org** (o arquivo é
