@@ -8,15 +8,17 @@ outros — mantendo a pose, anatomia e silhueta do sprite original, mas gerando
 um design inédito.
 
 ```
-Você digita: "Preciso de um Cavaleiro com lança" + estilo "Dark Fantasy"
+ETAPA 1 — criar o personagem
+  Você digita: "Cavaleiro com lança" + estilo "Dark Fantasy"
+       ↓  🔎 busca e baixa o spritesheet do Knight no Spriters Resource
+       ↓  ✂️ remove o fundo (e fatia os quadros, se você quiser)
+       ↓  ✨ o Gemini devolve UM personagem novo no estilo escolhido
        ↓
-🔎 Busca e baixa o spritesheet do Knight no Spriters Resource
+ETAPA 2 — animar o personagem
+       ↓  🎭 você escolhe o movimento: ataque, defesa, avanço, caminhada...
+       ↓  🎬 o Gemini gera as poses desse MESMO personagem
        ↓
-✂️ Remove o fundo e fatia os quadros de animação (você escolhe qual usar)
-       ↓
-✨ Gemini gera um novo sprite no estilo escolhido (mesma pose, visual novo)
-       ↓
-⬇️ Comparação lado a lado + download do PNG com fundo transparente
+⬇️ prévia em GIF + folha de sprites + PNGs individuais (prontos para o jogo)
 ```
 
 ---
@@ -30,7 +32,8 @@ sprites/
 ├── sprite_tools.py       # Módulo B — Remoção de fundo e fatiamento de quadros
 ├── gemini_transform.py   # Módulo C — Pipeline Img2Img com a API do Gemini
 ├── keywords.py           # Dicionário PT-BR → EN (ex.: "Algoz" → "Assassin Cross")
-├── requirements.txt      # Dependências
+├── requirements.txt      # Dependências Python
+├── packages.txt          # Dependências de sistema (Chromium na nuvem)
 ├── .env.example          # Modelo do arquivo de configuração da chave de API
 ├── data/                 # (criada automaticamente) índice JSON + downloads
 │   ├── sprite_index.json
@@ -108,40 +111,56 @@ O navegador abre automaticamente em `http://localhost:8501`. Fluxo de uso:
    "Priest", "Poring"...
 2. **Escolha** o spritesheet entre os resultados (link para a página original
    incluso).
-3. Decida entre o **sheet inteiro** ou um **quadro específico** (o app fatia
-   os quadros automaticamente).
-4. Selecione o **filtro de estilo** na barra lateral (ou descreva o seu) e o
-   **nível de variação**.
+3. Decida entre a **imagem inteira** (recomendado) ou um **quadro específico**
+   (o app fatia os quadros automaticamente e mostra um mapa numerado).
+4. Selecione o **filtro de estilo** entre os 13 disponíveis (ou descreva o seu)
+   e o **nível de variação**.
 5. Clique em **"✨ Transformar sprite com Gemini"** e compare o antes/depois.
-6. Baixe o PNG final com fundo transparente.
+6. Baixe o PNG final com fundo transparente — ou siga para a **Etapa 2** e crie
+   as animações de movimento a partir dele.
 
 ---
 
-## 🎬 Modo animação (vários quadros para usar em jogo)
+## 🎬 Etapa 2 — Animações de movimento (para usar em jogo)
 
-Um sprite só não serve para animar um personagem em um jogo — você precisa do
-ciclo de movimento inteiro. O modo animação resolve isso:
+Um sprite parado não serve para animar um personagem num jogo. O fluxo é em
+**duas etapas**, e essa separação é o que faz a animação funcionar:
 
-1. Envie (ou busque) um spritesheet com várias poses.
-2. Escolha **"🎬 Animação — vários quadros (para usar em jogo)"**.
-3. O app fatia a folha e mostra um **mapa numerado** dos quadros.
-4. Selecione o intervalo de quadros de um mesmo movimento (ex.: o ciclo de
-   caminhada em uma direção) e qual quadro define o design do personagem.
-5. Clique em **"🎬 Gerar animação"** e acompanhe a barra de progresso.
+```
+ETAPA 1 ─ folha com várias poses ──► Gemini ──► UM personagem novo
+                                                      │
+ETAPA 2 ─ esse personagem + "ataque" ──► Gemini ──► tira com N poses dele
+                                                      │
+                                          GIF + folha de sprites + PNGs
+```
 
-### Como a consistência do personagem é garantida
+### Por que duas etapas (e não tudo de uma vez)
 
-Este é o ponto crítico: se cada quadro fosse gerado isoladamente, sairia um
-personagem diferente em cada um e a animação ficaria inútil. A solução:
+A primeira tentativa foi transformar cada quadro do sprite original
+separadamente, usando o personagem já estilizado como referência de identidade
+e o quadro original como referência de pose. **Não funcionou:** com duas
+imagens de estilos diferentes na mesma chamada, o modelo mistura as duas e o
+personagem muda de um quadro para o outro.
 
-- O **primeiro quadro** é transformado normalmente e define o design
-  (armadura, cores, arma, cabelo).
-- Cada quadro seguinte é gerado com **duas imagens** enviadas juntas: o
-  personagem já estilizado (referência de *identidade*) + o quadro original
-  (referência de *pose*), com instrução explícita para copiar o design da
-  primeira e apenas a pose da segunda.
-- Nesses quadros a temperatura do modelo cai para `0.25` — queremos
-  fidelidade ao personagem, não criatividade.
+A abordagem atual elimina a causa: na Etapa 2 o personagem gerado é a **única**
+imagem enviada, e a pose vem de **texto**. Não há um segundo estilo competindo.
+
+Além disso, o método recomendado gera **todos os quadros em uma única chamada**,
+como uma tira horizontal que o app depois fatia. Uma geração única não tem como
+divergir de si mesma — é a forma mais confiável de manter a consistência.
+
+### Como usar
+
+1. Faça a Etapa 1 e gere o personagem (ou pule direto para a Etapa 2 e envie um
+   sprite pronto).
+2. Na Etapa 2, escolha o **movimento**: ataque, defesa, avanço rápido,
+   caminhada, parado (idle), conjurar magia, recebendo dano ou queda/morte — ou
+   descreva um movimento próprio.
+3. Escolha a quantidade de quadros (2 a 8) e o método:
+   - **🧷 Tira única** — 1 chamada à API, mais consistente (**recomendado**);
+   - **🔢 Quadro a quadro** — N chamadas, mais controle sobre cada pose, útil
+     se a tira sair com os quadros mal separados.
+4. Clique em **"🎬 Gerar animação"**, confira a **prévia em GIF** e baixe.
 
 ### O que você baixa
 
@@ -149,22 +168,22 @@ Um `.zip` contendo:
 
 | Arquivo | Para que serve |
 | --- | --- |
-| `spritesheet_grade.png` | Folha em **grade uniforme** — o app informa o tamanho exato da célula para você importar em Unity, Godot ou GameMaker. |
-| `spritesheet_layout_original.png` | Folha com o **mesmo layout do arquivo enviado**, para substituição direta. |
+| `spritesheet.png` | Folha em grade uniforme — o app informa o **tamanho exato da célula** para importar em Unity, Godot ou GameMaker. |
 | `quadros/frame_XX.png` | Cada pose em PNG separado, fundo transparente. |
-| `LEIA-ME.txt` | Estilo usado, número de quadros e tamanho da célula. |
+| `previa.gif` | O movimento animado, para conferir o resultado. |
+| `LEIA-ME.txt` | Movimento, número de quadros e tamanho da célula. |
 
 Os quadros são alinhados **pelos pés** (ancoragem inferior), o que evita o
-personagem "pular" entre os quadros durante a animação.
+personagem "pular" durante a animação.
 
-### Avisos práticos
+### Dicas práticas
 
-- **Cada quadro é uma chamada à API.** 6 quadros ≈ 6 chamadas (≈1 minuto). O
-  app avisa o custo estimado antes de começar e limita a 24 quadros por vez.
-- **Se um quadro falhar** (cota, filtro de segurança), os outros continuam: o
-  app mostra quais falharam e você ainda baixa os que deram certo.
-- **Dica de qualidade:** selecione quadros de um único movimento e uma única
-  direção por vez. Misturar direções na mesma geração piora a consistência.
+- **Gere uma animação por ação**, sempre a partir do **mesmo** personagem da
+  Etapa 1 — assim ataque, defesa e caminhada ficam consistentes entre si.
+- **Comece com 4 quadros.** Muitos quadros numa tira só deixam cada um pequeno
+  e com menos detalhe; se precisar de mais fluidez, use o modo quadro a quadro.
+- Se a tira vier com quadros colados, o app divide a largura em partes iguais
+  automaticamente — mas vale tentar de novo ou reduzir o número de quadros.
 
 ---
 

@@ -155,32 +155,148 @@ PROMPT_TEMPLATE = (
 )
 
 
-# Prompt usado nos quadros seguintes de uma animacao: recebe DUAS imagens —
-# o personagem ja estilizado (referencia de identidade) e o quadro original
-# (referencia de pose). E' o que garante que a animacao mostre o MESMO
-# personagem se movendo, e nao um personagem diferente por quadro.
-ANIM_PROMPT_TEMPLATE = (
-    "Voce recebeu duas imagens. "
-    "A IMAGEM 1 e' a folha de identidade do personagem: define exatamente "
-    "quem ele e' — roupas, armadura, cores, cabelo, arma e todos os detalhes "
-    "de design. A IMAGEM 2 e' um quadro de animacao do sprite original e "
-    "define apenas a POSE. "
-    "Gere um unico sprite novo que seja O MESMO PERSONAGEM da IMAGEM 1 "
-    "executando exatamente a POSE da IMAGEM 2. REGRAS OBRIGATORIAS: "
-    "(1) CONSISTENCIA ABSOLUTA de personagem: copie fielmente da IMAGEM 1 as "
-    "mesmas cores, o mesmo formato de armadura e roupas, o mesmo cabelo, a "
-    "mesma arma e os mesmos detalhes. NAO invente nem altere nenhum elemento "
-    "do design — esta e' a regra mais importante, pois os quadros serao usados "
-    "em sequencia como animacao. "
-    "(2) Copie da IMAGEM 2 apenas a pose: posicao de bracos, pernas, tronco, "
-    "cabeca, direcao em que o personagem olha e angulo da arma. "
-    "(3) Mantenha a mesma escala, proporcoes e enquadramento da IMAGEM 1, para "
-    "que os quadros se alinhem perfeitamente na animacao. "
-    "(4) O estilo visual continua sendo: {style}. "
-    "(5) O fundo deve ser 100% branco solido puro (#FFFFFF), sem sombras "
-    "projetadas, sem cenario, sem molduras e sem texto. "
-    "{extra}"
-)
+# ---------------------------------------------------------------------------
+# Biblioteca de acoes para animacao (Etapa 2)
+# ---------------------------------------------------------------------------
+#
+# Cada acao descreve o arco do movimento quadro a quadro. Os textos entram no
+# prompt como descricao de POSE — a identidade do personagem vem sempre da
+# imagem de referencia, nunca do texto.
+
+ACTIONS: dict[str, dict] = {
+    "Ataque com arma": {
+        "emoji": "⚔️",
+        "resumo": "Golpe descendente com a arma em mãos.",
+        "poses": [
+            "de guarda, arma recuada ao lado do corpo, joelhos levemente flexionados",
+            "arma erguida acima da cabeca, tronco girado para tras acumulando forca",
+            "inicio do golpe descendente, braco se esticando para frente",
+            "momento do impacto, arma a frente na altura do alvo, corpo projetado para frente",
+            "arma completando o arco para baixo, corpo inclinado a frente",
+            "retornando a posicao de guarda inicial",
+        ],
+    },
+    "Defesa / bloqueio": {
+        "emoji": "🛡️",
+        "resumo": "Levanta a guarda e absorve o impacto.",
+        "poses": [
+            "em pe, relaxado, guarda baixa",
+            "comecando a erguer o braco e o escudo a frente do corpo",
+            "escudo erguido cobrindo o tronco, corpo agachado atras da protecao",
+            "recebendo o impacto: corpo empurrado para tras, pes firmes, escudo tremendo",
+            "recuperando a postura, escudo ainda erguido",
+        ],
+    },
+    "Avanço rápido / investida": {
+        "emoji": "💨",
+        "resumo": "Arranca para frente em corrida ou investida.",
+        "poses": [
+            "posicao de largada, corpo inclinado a frente, uma perna recuada",
+            "impulso inicial, perna de tras empurrando o chao, tronco bem inclinado",
+            "no ar em pleno avanco, pernas afastadas em passada longa, braços recuados",
+            "aterrissando a frente, perna dianteira absorvendo o impacto",
+            "corrida em velocidade maxima, braços cortando o ar",
+        ],
+    },
+    "Caminhada": {
+        "emoji": "🚶",
+        "resumo": "Ciclo de caminhada lateral, para locomoção no mapa.",
+        "poses": [
+            "passo com a perna direita a frente, braco esquerdo a frente",
+            "pernas se cruzando, corpo no ponto mais alto do ciclo",
+            "passo com a perna esquerda a frente, braco direito a frente",
+            "pernas se cruzando novamente, completando o ciclo",
+        ],
+    },
+    "Parado (idle)": {
+        "emoji": "🧍",
+        "resumo": "Respiração leve para o personagem não ficar estático.",
+        "poses": [
+            "em pe, postura neutra, peito normal",
+            "peito levemente expandido inspirando, ombros um pouco mais altos",
+            "peito no ponto maximo da inspiracao, cabeca minimamente erguida",
+            "expirando, ombros descendo de volta a postura neutra",
+        ],
+    },
+    "Conjurar magia": {
+        "emoji": "✨",
+        "resumo": "Canaliza e lança um feitiço.",
+        "poses": [
+            "em pe, começando a erguer as maos, olhar concentrado",
+            "maos erguidas a frente do peito, energia se formando entre elas",
+            "energia concentrada e brilhante, corpo tensionado, cabelo e vestes agitados",
+            "liberando o feitico: bracos esticados a frente, corpo projetado",
+            "apos o disparo, bracos ainda estendidos, corpo relaxando",
+        ],
+    },
+    "Recebendo dano": {
+        "emoji": "💥",
+        "resumo": "Reação a um golpe recebido.",
+        "poses": [
+            "em pe, postura normal",
+            "cabeca e tronco jogados para tras pelo impacto, bracos abertos",
+            "cambaleando para tras, um pe recuando para nao cair",
+            "recuperando o equilibrio, voltando a postura de guarda",
+        ],
+    },
+    "Queda / morte": {
+        "emoji": "☠️",
+        "resumo": "Personagem é derrotado e cai.",
+        "poses": [
+            "em pe, corpo comecando a ceder, ombros caidos",
+            "joelhos dobrando, tronco inclinando a frente",
+            "caindo de joelhos, bracos pendendo",
+            "corpo tombando de lado em direcao ao chao",
+            "deitado no chao, imovel",
+        ],
+    },
+}
+
+
+def action_options() -> list[str]:
+    """Nomes das acoes prefixados com emoji, para o seletor da interface."""
+    return [f"{dados['emoji']} {nome}" for nome, dados in ACTIONS.items()]
+
+
+def strip_action_emoji(label: str) -> str:
+    for nome in ACTIONS:
+        if label.endswith(nome):
+            return nome
+    return label
+
+
+def poses_for_action(action_name: str, n_frames: int, custom_action: str = "") -> list[str]:
+    """
+    Devolve `n_frames` descricoes de pose distribuidas ao longo do movimento.
+
+    Se o usuario descreveu uma acao propria, gera descricoes genericas de arco
+    de movimento (inicio -> meio -> fim) com base no texto dele.
+    """
+    if custom_action.strip():
+        base = custom_action.strip()
+        if n_frames == 1:
+            return [base]
+        etapas = []
+        for i in range(n_frames):
+            fracao = i / (n_frames - 1)
+            if fracao == 0:
+                etapas.append(f"inicio do movimento: {base}")
+            elif fracao < 0.5:
+                etapas.append(f"movimento em andamento ({int(fracao*100)}% concluido): {base}")
+            elif fracao == 0.5:
+                etapas.append(f"ponto central e mais intenso do movimento: {base}")
+            elif fracao < 1:
+                etapas.append(f"movimento se completando ({int(fracao*100)}%): {base}")
+            else:
+                etapas.append(f"final do movimento, retornando ao repouso: {base}")
+        return etapas
+
+    poses = ACTIONS.get(action_name, {}).get("poses", ["em pe, postura neutra"])
+    if n_frames >= len(poses):
+        return poses[:n_frames] if n_frames <= len(poses) else poses + [poses[-1]] * (n_frames - len(poses))
+    # Amostra uniforme ao longo do arco (mantem inicio e fim)
+    passo = (len(poses) - 1) / (n_frames - 1) if n_frames > 1 else 0
+    return [poses[round(i * passo)] for i in range(n_frames)]
 
 
 def build_prompt(filter_name: str, extra_instructions: str = "", custom_style: str = "") -> str:
@@ -192,15 +308,157 @@ def build_prompt(filter_name: str, extra_instructions: str = "", custom_style: s
     return PROMPT_TEMPLATE.format(style=style, extra=extra)
 
 
-def build_animation_prompt(
-    filter_name: str, extra_instructions: str = "", custom_style: str = ""
-) -> str:
-    """Prompt dos quadros seguintes, com referencia de personagem + de pose."""
+# ---------------------------------------------------------------------------
+# Biblioteca de acoes para animacao (Etapa 2)
+# ---------------------------------------------------------------------------
+#
+# Cada acao descreve o arco do movimento quadro a quadro. Os textos entram no
+# prompt como descricao de POSE — a identidade do personagem vem sempre da
+# imagem de referencia, nunca do texto.
+
+ACTIONS: dict[str, dict] = {
+    "Ataque com arma": {
+        "emoji": "⚔️",
+        "resumo": "Golpe descendente com a arma em mãos.",
+        "poses": [
+            "de guarda, arma recuada ao lado do corpo, joelhos levemente flexionados",
+            "arma erguida acima da cabeca, tronco girado para tras acumulando forca",
+            "inicio do golpe descendente, braco se esticando para frente",
+            "momento do impacto, arma a frente na altura do alvo, corpo projetado para frente",
+            "arma completando o arco para baixo, corpo inclinado a frente",
+            "retornando a posicao de guarda inicial",
+        ],
+    },
+    "Defesa / bloqueio": {
+        "emoji": "🛡️",
+        "resumo": "Levanta a guarda e absorve o impacto.",
+        "poses": [
+            "em pe, relaxado, guarda baixa",
+            "comecando a erguer o braco e o escudo a frente do corpo",
+            "escudo erguido cobrindo o tronco, corpo agachado atras da protecao",
+            "recebendo o impacto: corpo empurrado para tras, pes firmes, escudo tremendo",
+            "recuperando a postura, escudo ainda erguido",
+        ],
+    },
+    "Avanço rápido / investida": {
+        "emoji": "💨",
+        "resumo": "Arranca para frente em corrida ou investida.",
+        "poses": [
+            "posicao de largada, corpo inclinado a frente, uma perna recuada",
+            "impulso inicial, perna de tras empurrando o chao, tronco bem inclinado",
+            "no ar em pleno avanco, pernas afastadas em passada longa, braços recuados",
+            "aterrissando a frente, perna dianteira absorvendo o impacto",
+            "corrida em velocidade maxima, braços cortando o ar",
+        ],
+    },
+    "Caminhada": {
+        "emoji": "🚶",
+        "resumo": "Ciclo de caminhada lateral, para locomoção no mapa.",
+        "poses": [
+            "passo com a perna direita a frente, braco esquerdo a frente",
+            "pernas se cruzando, corpo no ponto mais alto do ciclo",
+            "passo com a perna esquerda a frente, braco direito a frente",
+            "pernas se cruzando novamente, completando o ciclo",
+        ],
+    },
+    "Parado (idle)": {
+        "emoji": "🧍",
+        "resumo": "Respiração leve para o personagem não ficar estático.",
+        "poses": [
+            "em pe, postura neutra, peito normal",
+            "peito levemente expandido inspirando, ombros um pouco mais altos",
+            "peito no ponto maximo da inspiracao, cabeca minimamente erguida",
+            "expirando, ombros descendo de volta a postura neutra",
+        ],
+    },
+    "Conjurar magia": {
+        "emoji": "✨",
+        "resumo": "Canaliza e lança um feitiço.",
+        "poses": [
+            "em pe, começando a erguer as maos, olhar concentrado",
+            "maos erguidas a frente do peito, energia se formando entre elas",
+            "energia concentrada e brilhante, corpo tensionado, cabelo e vestes agitados",
+            "liberando o feitico: bracos esticados a frente, corpo projetado",
+            "apos o disparo, bracos ainda estendidos, corpo relaxando",
+        ],
+    },
+    "Recebendo dano": {
+        "emoji": "💥",
+        "resumo": "Reação a um golpe recebido.",
+        "poses": [
+            "em pe, postura normal",
+            "cabeca e tronco jogados para tras pelo impacto, bracos abertos",
+            "cambaleando para tras, um pe recuando para nao cair",
+            "recuperando o equilibrio, voltando a postura de guarda",
+        ],
+    },
+    "Queda / morte": {
+        "emoji": "☠️",
+        "resumo": "Personagem é derrotado e cai.",
+        "poses": [
+            "em pe, corpo comecando a ceder, ombros caidos",
+            "joelhos dobrando, tronco inclinando a frente",
+            "caindo de joelhos, bracos pendendo",
+            "corpo tombando de lado em direcao ao chao",
+            "deitado no chao, imovel",
+        ],
+    },
+}
+
+
+def action_options() -> list[str]:
+    """Nomes das acoes prefixados com emoji, para o seletor da interface."""
+    return [f"{dados['emoji']} {nome}" for nome, dados in ACTIONS.items()]
+
+
+def strip_action_emoji(label: str) -> str:
+    for nome in ACTIONS:
+        if label.endswith(nome):
+            return nome
+    return label
+
+
+def poses_for_action(action_name: str, n_frames: int, custom_action: str = "") -> list[str]:
+    """
+    Devolve `n_frames` descricoes de pose distribuidas ao longo do movimento.
+
+    Se o usuario descreveu uma acao propria, gera descricoes genericas de arco
+    de movimento (inicio -> meio -> fim) com base no texto dele.
+    """
+    if custom_action.strip():
+        base = custom_action.strip()
+        if n_frames == 1:
+            return [base]
+        etapas = []
+        for i in range(n_frames):
+            fracao = i / (n_frames - 1)
+            if fracao == 0:
+                etapas.append(f"inicio do movimento: {base}")
+            elif fracao < 0.5:
+                etapas.append(f"movimento em andamento ({int(fracao*100)}% concluido): {base}")
+            elif fracao == 0.5:
+                etapas.append(f"ponto central e mais intenso do movimento: {base}")
+            elif fracao < 1:
+                etapas.append(f"movimento se completando ({int(fracao*100)}%): {base}")
+            else:
+                etapas.append(f"final do movimento, retornando ao repouso: {base}")
+        return etapas
+
+    poses = ACTIONS.get(action_name, {}).get("poses", ["em pe, postura neutra"])
+    if n_frames >= len(poses):
+        return poses[:n_frames] if n_frames <= len(poses) else poses + [poses[-1]] * (n_frames - len(poses))
+    # Amostra uniforme ao longo do arco (mantem inicio e fim)
+    passo = (len(poses) - 1) / (n_frames - 1) if n_frames > 1 else 0
+    return [poses[round(i * passo)] for i in range(n_frames)]
+
+
+def build_prompt(filter_name: str, extra_instructions: str = "", custom_style: str = "") -> str:
+    """Monta o prompt final a partir do filtro escolhido (ou estilo livre)."""
     style = custom_style.strip() or FILTERS.get(filter_name, filter_name)
     extra = ""
     if extra_instructions.strip():
         extra = f"Instrucoes adicionais do usuario: {extra_instructions.strip()}."
-    return ANIM_PROMPT_TEMPLATE.format(style=style, extra=extra)
+    return PROMPT_TEMPLATE.format(style=style, extra=extra)
 
 
 # ---------------------------------------------------------------------------
@@ -232,10 +490,10 @@ def transform_sprite(
     creativity: float = 0.7,
     api_key: str | None = None,
     max_retries: int = 3,
-    reference_image: Image.Image | None = None,
 ) -> tuple[Image.Image, str]:
     """
-    Pipeline Img2Img: envia (imagem base + prompt) e devolve a imagem gerada.
+    Pipeline Img2Img (Etapa 1): envia (imagem base + prompt) e devolve a
+    imagem gerada — um personagem unico, reestilizado.
 
     Parametros:
       base_image          sprite original ja preparado (ver prepare_for_gemini)
@@ -246,36 +504,20 @@ def transform_sprite(
                           valores altos geram resultados mais distintos do
                           original (bom para evitar copia direta)
       api_key             sobrescreve a variavel de ambiente, se informado
-      reference_image     quando informado, ativa o modo animacao: o sprite ja
-                          estilizado entra como referencia de IDENTIDADE do
-                          personagem e `base_image` passa a definir apenas a
-                          POSE — e' o que mantem o mesmo personagem em todos os
-                          quadros de um ciclo de animacao
 
     Retorna (imagem_gerada, prompt_utilizado).
+
+    Para animar o personagem gerado, veja generate_action_sheet() e
+    generate_action_frames() (Etapa 2).
     """
     from google.genai import types
 
     client = _get_client(api_key)
 
-    modo_animacao = reference_image is not None
-    if modo_animacao:
-        prompt = build_animation_prompt(filter_name, extra_instructions, custom_style)
-        # Temperatura baixa e fixa: nos quadros seguintes queremos fidelidade
-        # ao personagem, nao criatividade (que quebraria a consistencia).
-        temperature = 0.25
-        contents = [
-            "IMAGEM 1 — referencia de identidade do personagem:",
-            reference_image,
-            "IMAGEM 2 — quadro original que define apenas a pose:",
-            base_image,
-            prompt,
-        ]
-    else:
-        prompt = build_prompt(filter_name, extra_instructions, custom_style)
-        # temperature 0.55..1.15: nunca tao baixa a ponto de "clonar" o original
-        temperature = 0.55 + 0.6 * max(0.0, min(1.0, creativity))
-        contents = [prompt, base_image]
+    prompt = build_prompt(filter_name, extra_instructions, custom_style)
+    # temperature 0.55..1.15: nunca tao baixa a ponto de "clonar" o original
+    temperature = 0.55 + 0.6 * max(0.0, min(1.0, creativity))
+    contents = [prompt, base_image]
 
     config = types.GenerateContentConfig(
         temperature=temperature,
@@ -298,22 +540,8 @@ def transform_sprite(
                 "seguranca). Tente outro filtro ou outro quadro do sprite."
             )
         except Exception as exc:  # erros de rede/quota -> retry com backoff
-            # Chave invalida ou sem permissao nao melhora com nova tentativa:
-            # avisa na hora, em vez de insistir por quase um minuto.
-            texto = str(exc).upper()
-            if any(
-                marca in texto
-                for marca in (
-                    "API_KEY_INVALID", "API KEY NOT VALID", "PERMISSION_DENIED",
-                    "UNAUTHENTICATED", "401", "403",
-                )
-            ):
-                raise RuntimeError(
-                    "A chave da API foi recusada pelo Google. Confira se voce "
-                    "copiou a chave inteira de https://aistudio.google.com/apikey "
-                    "e se o faturamento/cota da conta esta ativo. "
-                    f"(resposta do servidor: {exc})"
-                ) from exc
+            # Chave recusada nao melhora com nova tentativa: avisa na hora.
+            _raise_if_auth_error(exc)
             last_error = exc
         time.sleep(2 ** attempt)
 
@@ -321,7 +549,7 @@ def transform_sprite(
 
 
 # ---------------------------------------------------------------------------
-# Modo animacao: varios quadros com o MESMO personagem
+# Resultado de um quadro gerado
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -337,83 +565,212 @@ class FrameResult:
         return self.image is not None
 
 
-def transform_animation_frames(
-    frames: list[Image.Image],
-    filter_name: str,
+# ---------------------------------------------------------------------------
+# Etapa 2 — Animar um personagem JA gerado
+# ---------------------------------------------------------------------------
+#
+# Aqui o personagem gerado na Etapa 1 e' a UNICA referencia visual, e a pose
+# vem de texto. Isso elimina a causa da inconsistencia do modo anterior: nao
+# ha uma segunda imagem, com outro estilo, competindo pela aparencia final.
+
+SHEET_PROMPT_TEMPLATE = (
+    "A imagem fornecida mostra UM personagem de jogo 2D. Ele e' a referencia "
+    "definitiva e imutavel de aparencia. "
+    "Gere UMA UNICA imagem contendo uma TIRA HORIZONTAL de exatamente "
+    "{n_frames} quadros de animacao desse MESMO personagem executando a acao: "
+    "{acao}. "
+    "As poses, na ordem da esquerda para a direita, devem ser: {poses}. "
+    "REGRAS OBRIGATORIAS: "
+    "(1) CONSISTENCIA ABSOLUTA: em todos os {n_frames} quadros o personagem "
+    "deve ter exatamente as mesmas cores, a mesma armadura e roupas, o mesmo "
+    "cabelo, a mesma arma e os mesmos detalhes da imagem de referencia. Nada "
+    "de design pode mudar entre os quadros — apenas a pose. "
+    "(2) LAYOUT: os {n_frames} quadros lado a lado em uma unica linha, "
+    "igualmente espacados, separados por espaco branco vazio, sem molduras, "
+    "sem numeros e sem qualquer texto. "
+    "(3) ALINHAMENTO: todos os quadros na MESMA escala, com o personagem do "
+    "mesmo tamanho e os pes na MESMA altura em todos eles, para que a "
+    "animacao nao trema. "
+    "(4) O fundo de toda a imagem deve ser branco solido puro (#FFFFFF). "
+    "(5) Mantenha o mesmo estilo artistico e a mesma perspectiva da imagem de "
+    "referencia. "
+    "{extra}"
+)
+
+POSE_PROMPT_TEMPLATE = (
+    "A imagem fornecida mostra UM personagem de jogo 2D. Ele e' a referencia "
+    "definitiva e imutavel de aparencia. "
+    "Gere um novo sprite unico do MESMO personagem, sem alterar nada do seu "
+    "design, agora nesta pose: {pose}. "
+    "Contexto do movimento: {acao} (quadro {i} de {n_frames}). "
+    "REGRAS OBRIGATORIAS: "
+    "(1) CONSISTENCIA ABSOLUTA: copie exatamente as cores, a armadura, as "
+    "roupas, o cabelo, a arma e todos os detalhes da imagem de referencia. "
+    "NAO redesenhe nem reinterprete o personagem — apenas mude a pose. "
+    "(2) Mantenha a MESMA escala, o mesmo enquadramento e a mesma altura dos "
+    "pes da imagem de referencia, para que os quadros se alinhem na animacao. "
+    "(3) Mantenha o mesmo estilo artistico e a mesma perspectiva. "
+    "(4) O fundo deve ser branco solido puro (#FFFFFF), sem sombras "
+    "projetadas, sem cenario, sem molduras e sem texto. "
+    "{extra}"
+)
+
+
+def generate_action_sheet(
+    character_image: Image.Image,
+    action_name: str,
+    n_frames: int = 4,
+    custom_action: str = "",
     extra_instructions: str = "",
-    custom_style: str = "",
-    creativity: float = 0.7,
     api_key: str | None = None,
-    reference_index: int = 0,
+    max_retries: int = 3,
+) -> tuple[Image.Image, str]:
+    """
+    Gera TODOS os quadros de uma acao em UMA unica chamada, como uma tira.
+
+    E' o metodo mais consistente que existe para este caso: como tudo sai de
+    uma unica geracao, o personagem nao tem como divergir de si mesmo entre os
+    quadros. Depois a tira e' fatiada em quadros individuais.
+
+    Retorna (imagem_da_tira, prompt_utilizado).
+    """
+    from google.genai import types
+
+    client = _get_client(api_key)
+    acao = custom_action.strip() or ACTIONS.get(action_name, {}).get(
+        "resumo", action_name
+    )
+    poses = poses_for_action(action_name, n_frames, custom_action)
+    poses_texto = "; ".join(f"quadro {i + 1}: {p}" for i, p in enumerate(poses))
+    extra = (
+        f"Instrucoes adicionais do usuario: {extra_instructions.strip()}."
+        if extra_instructions.strip()
+        else ""
+    )
+    prompt = SHEET_PROMPT_TEMPLATE.format(
+        n_frames=n_frames, acao=acao, poses=poses_texto, extra=extra
+    )
+
+    config = types.GenerateContentConfig(
+        temperature=0.35,  # baixa: fidelidade ao personagem acima de tudo
+        response_modalities=["TEXT", "IMAGE"],
+    )
+
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=IMAGE_MODEL,
+                contents=[prompt, character_image],
+                config=config,
+            )
+            image = _extract_image(response)
+            if image is not None:
+                return image, prompt
+            last_error = RuntimeError(
+                "O modelo respondeu sem imagem (possivel bloqueio de "
+                "seguranca). Tente outra acao ou menos quadros."
+            )
+        except Exception as exc:
+            _raise_if_auth_error(exc)
+            last_error = exc
+        time.sleep(2 ** attempt)
+
+    raise RuntimeError(f"Falha ao gerar a tira de animacao: {last_error}")
+
+
+def generate_action_frames(
+    character_image: Image.Image,
+    action_name: str,
+    n_frames: int = 4,
+    custom_action: str = "",
+    extra_instructions: str = "",
+    api_key: str | None = None,
     pause_between: float = 1.0,
     progress_callback=None,
-) -> tuple[list[FrameResult], Image.Image | None]:
+) -> list[FrameResult]:
     """
-    Transforma varios quadros mantendo o MESMO personagem em todos.
+    Gera os quadros da acao um a um (uma chamada por quadro).
 
-    Estrategia (a mesma usada para consistencia de personagem em producao):
-      1. O quadro `reference_index` e' transformado normalmente e define o
-         design do personagem (roupas, cores, arma...).
-      2. Cada quadro seguinte e' gerado com DUAS imagens: o personagem ja
-         estilizado (identidade) + o quadro original (pose). Assim a sequencia
-         mostra o mesmo personagem se movendo, e nao personagens diferentes.
-
-    Um quadro que falhar nao interrompe os demais: ele volta com `error`
-    preenchido, e os quadros bem-sucedidos continuam utilizaveis.
-
-    `progress_callback(concluidos, total, mensagem)` permite atualizar a
-    barra de progresso da interface.
-
-    Retorna (lista de FrameResult na ordem original, imagem de referencia).
+    Da mais controle sobre cada pose, mas cada chamada pode desviar um pouco
+    do personagem. Use quando a tira unica sair com quadros mal separados.
     """
-    if not frames:
-        return [], None
-
-    reference_index = max(0, min(reference_index, len(frames) - 1))
-    total = len(frames)
-    results: list[FrameResult | None] = [None] * total
-
-    def relatar(feitos: int, mensagem: str) -> None:
-        if progress_callback:
-            progress_callback(feitos, total, mensagem)
-
-    # --- Passo 1: o quadro de referencia define o personagem ---------------
-    relatar(0, f"Criando o design do personagem (quadro {reference_index + 1})...")
-    reference_image, _ = transform_sprite(
-        frames[reference_index],
-        filter_name=filter_name,
-        extra_instructions=extra_instructions,
-        custom_style=custom_style,
-        creativity=creativity,
-        api_key=api_key,
+    acao = custom_action.strip() or ACTIONS.get(action_name, {}).get(
+        "resumo", action_name
     )
-    results[reference_index] = FrameResult(reference_index, reference_image)
-    relatar(1, "Design do personagem definido. Gerando as demais poses...")
+    poses = poses_for_action(action_name, n_frames, custom_action)
+    extra = (
+        f"Instrucoes adicionais do usuario: {extra_instructions.strip()}."
+        if extra_instructions.strip()
+        else ""
+    )
 
-    # --- Passo 2: demais quadros herdam a identidade do personagem --------
-    feitos = 1
-    for i, frame in enumerate(frames):
-        if i == reference_index:
-            continue
+    resultados: list[FrameResult] = []
+    for i, pose in enumerate(poses):
+        if progress_callback:
+            progress_callback(i, n_frames, f"Gerando quadro {i + 1} de {n_frames}...")
+        prompt = POSE_PROMPT_TEMPLATE.format(
+            pose=pose, acao=acao, i=i + 1, n_frames=n_frames, extra=extra
+        )
         try:
-            if pause_between:
-                time.sleep(pause_between)  # respeita o limite de requisicoes
-            image, _ = transform_sprite(
-                frame,
-                filter_name=filter_name,
-                extra_instructions=extra_instructions,
-                custom_style=custom_style,
-                creativity=creativity,
-                api_key=api_key,
-                reference_image=reference_image,
-            )
-            results[i] = FrameResult(i, image)
+            if i and pause_between:
+                time.sleep(pause_between)
+            image = _single_image_call(prompt, character_image, api_key, temperature=0.3)
+            resultados.append(FrameResult(i, image))
         except Exception as exc:
-            results[i] = FrameResult(i, None, error=str(exc))
-        feitos += 1
-        relatar(feitos, f"Quadro {feitos} de {total} processado.")
+            resultados.append(FrameResult(i, None, error=str(exc)))
+    if progress_callback:
+        progress_callback(n_frames, n_frames, "Concluido.")
+    return resultados
 
-    return [r for r in results if r is not None], reference_image
+
+def _single_image_call(
+    prompt: str,
+    image: Image.Image,
+    api_key: str | None,
+    temperature: float = 0.3,
+    max_retries: int = 3,
+) -> Image.Image:
+    """Uma chamada Img2Img simples, com retry e erro de autenticacao imediato."""
+    from google.genai import types
+
+    client = _get_client(api_key)
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        response_modalities=["TEXT", "IMAGE"],
+    )
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=IMAGE_MODEL, contents=[prompt, image], config=config
+            )
+            result = _extract_image(response)
+            if result is not None:
+                return result
+            last_error = RuntimeError("o modelo respondeu sem imagem")
+        except Exception as exc:
+            _raise_if_auth_error(exc)
+            last_error = exc
+        time.sleep(2 ** attempt)
+    raise RuntimeError(f"apos {max_retries} tentativas: {last_error}")
+
+
+def _raise_if_auth_error(exc: Exception) -> None:
+    """Chave recusada nao melhora com retry: interrompe na hora."""
+    texto = str(exc).upper()
+    if any(
+        marca in texto
+        for marca in (
+            "API_KEY_INVALID", "API KEY NOT VALID", "PERMISSION_DENIED",
+            "UNAUTHENTICATED", "401", "403",
+        )
+    ):
+        raise RuntimeError(
+            "A chave da API foi recusada pelo Google. Confira se voce copiou a "
+            "chave inteira de https://aistudio.google.com/apikey e se a cota da "
+            f"conta esta ativa. (resposta do servidor: {exc})"
+        ) from exc
 
 
 def _extract_image(response) -> Image.Image | None:

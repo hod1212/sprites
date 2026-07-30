@@ -1,14 +1,26 @@
 """
 Modulo D — Interface do usuario (Streamlit).
 
-Fluxo completo:
-  1. Usuario descreve o personagem ("Preciso de um Cavaleiro com lanca").
-  2. O app busca no indice local do Spriters Resource (construindo o indice
-     na primeira execucao) e mostra os sheets candidatos.
-  3. O sheet escolhido e' baixado, o fundo e' removido e o usuario decide
-     entre usar o sheet inteiro ou um quadro/direcao especifica.
-  4. O sprite vai para o Gemini (Img2Img) com o filtro de estilo escolhido.
-  5. Original e resultado aparecem lado a lado, com botao de download.
+O fluxo tem DUAS etapas, e essa separacao e' proposital:
+
+  ETAPA 1 — Criar o personagem
+    1. Usuario descreve o personagem ("Preciso de um Cavaleiro com lanca").
+    2. O app busca no indice local do Spriters Resource (construindo o indice
+       na primeira execucao) e mostra os sheets candidatos.
+    3. O sheet escolhido e' baixado, o fundo e' removido e o usuario decide
+       entre usar a imagem inteira ou um quadro especifico.
+    4. O sprite vai para o Gemini (Img2Img) com o filtro escolhido e volta UM
+       personagem reestilizado.
+
+  ETAPA 2 — Animar o personagem gerado
+    5. O personagem da Etapa 1 (ou um sprite enviado) e' a UNICA referencia
+       visual; as poses vem de texto (ataque, defesa, avanco, caminhada...).
+       Isso e' o que garante consistencia: sem uma segunda imagem de outro
+       estilo competindo, o personagem nao muda entre os quadros.
+    6. Preferencialmente todos os quadros saem de UMA chamada, como uma tira
+       horizontal, depois fatiada — uma geracao unica nao diverge de si mesma.
+    7. Saida: previa em GIF, folha de sprites com o tamanho da celula e ZIP
+       com os quadros individuais.
 
 Rodar com:  streamlit run app.py
 """
@@ -26,12 +38,16 @@ from PIL import Image
 import scraper
 import sprite_tools
 from gemini_transform import (
+    ACTIONS,
     FILTER_UI,
     FILTERS,
     GeminiNotConfigured,
+    action_options,
     filter_options,
+    generate_action_frames,
+    generate_action_sheet,
+    strip_action_emoji,
     strip_emoji,
-    transform_animation_frames,
     transform_sprite,
 )
 
@@ -203,37 +219,26 @@ else:
 remember_api_key("api_key_main")
 api_key = st.session_state[KEY_STORE] or stored_key
 
-MAX_QUADROS_ANIMACAO = 24
-
-
 def seletor_de_sprite(sheet: Image.Image, nome: str, prefixo: str) -> dict:
     """
-    Interface compartilhada pelas duas abas: deixa o usuario escolher entre
-    trabalhar com a imagem inteira, um quadro isolado ou vários quadros para
-    montar uma animação.
+    Interface compartilhada pelas duas abas da Etapa 1: o usuario escolhe se
+    envia a imagem inteira (o Gemini le todas as poses e devolve UM
+    personagem) ou um quadro isolado.
 
-    Devolve um dicionario com o que a etapa de transformacao precisa.
+    A animacao nao acontece aqui — ela e' a Etapa 2, que parte do personagem
+    ja gerado. Ver a secao "Etapa 2" mais abaixo.
     """
-    escolha: dict = {
-        "base": None,          # sprite unico (modos 1 e 2)
-        "frames": [],          # lista de sprites (modo animacao)
-        "placements": [],      # bboxes originais, para remontar o sheet
-        "sheet_size": sheet.size,
-        "label": nome,
-        "animacao": False,
-    }
+    escolha: dict = {"base": None, "label": nome}
 
     modo = st.radio(
         "Como você quer trabalhar?",
-        [
-            "🖼️ Imagem inteira",
-            "🧩 Um quadro só",
-            "🎬 Animação — vários quadros (para usar em jogo)",
-        ],
+        ["🖼️ Imagem inteira (recomendado)", "🧩 Um quadro só"],
         key=f"{prefixo}_modo",
+        help="Com a imagem inteira, a IA vê todas as poses do arquivo e "
+        "devolve um personagem só — que você depois anima na Etapa 2.",
     )
 
-    if modo == "🖼️ Imagem inteira":
+    if modo.startswith("🖼️"):
         escolha["base"] = sheet
         st.image(sheet, caption=f"{nome} (fundo removido)")
         return escolha
@@ -247,83 +252,16 @@ def seletor_de_sprite(sheet: Image.Image, nome: str, prefixo: str) -> dict:
         return escolha
 
     st.success(f"🧩 {len(frames)} quadros detectados.")
-
-    # Mapa numerado: uma imagem so, legivel no celular (miniaturas em colunas
-    # empilham e ficam gigantes em telas estreitas).
     mapa = sprite_tools.annotate_frames(sheet, frames)
     st.image(mapa, caption="Mapa dos quadros — use estes números para escolher", use_container_width=True)
 
-    if modo == "🧩 Um quadro só":
-        idx = st.number_input(
-            "Número do quadro (veja a numeração acima)",
-            0, len(frames) - 1, 0, key=f"{prefixo}_um_idx",
-        )
-        escolha["base"] = frames[int(idx)].image
-        escolha["label"] = f"{nome} — quadro {int(idx)}"
-        st.image(escolha["base"], caption=escolha["label"], width=180)
-        return escolha
-
-    # ------------------ Modo animacao ------------------
-    st.markdown("##### 🎬 Escolha os quadros da animação")
-    st.caption(
-        "Selecione os quadros de um mesmo movimento (ex.: o ciclo de caminhada "
-        "em uma direção). O primeiro quadro define o design do personagem e os "
-        "demais o repetem em outras poses."
+    idx = st.number_input(
+        "Número do quadro (veja a numeração acima)",
+        0, len(frames) - 1, 0, key=f"{prefixo}_um_idx",
     )
-
-    modo_selecao = st.radio(
-        "Seleção dos quadros",
-        ["Intervalo (mais rápido)", "Escolher um por um"],
-        horizontal=True,
-        key=f"{prefixo}_selmodo",
-    )
-
-    if modo_selecao == "Intervalo (mais rápido)":
-        inicio, fim = st.slider(
-            "Do quadro ... até o quadro",
-            0, len(frames) - 1, (0, min(len(frames) - 1, 5)),
-            key=f"{prefixo}_range",
-        )
-        indices = list(range(inicio, fim + 1))
-    else:
-        indices = st.multiselect(
-            "Quadros (pela numeração das miniaturas)",
-            list(range(len(frames))),
-            default=list(range(min(len(frames), 6))),
-            key=f"{prefixo}_multi",
-        )
-
-    indices = sorted(set(indices))
-    if not indices:
-        st.info("Selecione ao menos dois quadros para gerar uma animação.")
-        return escolha
-
-    if len(indices) > MAX_QUADROS_ANIMACAO:
-        st.warning(
-            f"Você selecionou {len(indices)} quadros. Para evitar estourar a "
-            f"cota da API, vou processar os primeiros {MAX_QUADROS_ANIMACAO}."
-        )
-        indices = indices[:MAX_QUADROS_ANIMACAO]
-
-    ref_idx = st.selectbox(
-        "Quadro que define o design do personagem",
-        indices,
-        index=0,
-        help="Escolha o quadro em que o personagem aparece mais nítido e de "
-        "corpo inteiro — em geral o de frente, parado.",
-        key=f"{prefixo}_ref",
-    )
-
-    escolha["frames"] = [frames[i].image for i in indices]
-    escolha["placements"] = [frames[i].bbox for i in indices]
-    escolha["ref_pos"] = indices.index(ref_idx)
-    escolha["label"] = f"{nome} — {len(indices)} quadros"
-    escolha["animacao"] = True
-
-    st.info(
-        f"🎬 **{len(indices)} quadros** selecionados → serão feitas "
-        f"{len(indices)} chamadas à API (≈{len(indices) * 12}s no total)."
-    )
+    escolha["base"] = frames[int(idx)].image
+    escolha["label"] = f"{nome} — quadro {int(idx)}"
+    st.image(escolha["base"], caption=escolha["label"], width=180)
     return escolha
 
 
@@ -428,160 +366,7 @@ extra = st.text_input(
     placeholder="Ex.: adicione uma capa esvoaçante, deixe a armadura dourada...",
 )
 
-quadros_animacao = selecao.get("frames") or []
-modo_animacao = bool(selecao.get("animacao")) and len(quadros_animacao) >= 2
-
-# ---------------------------------------------------------------------------
-# Caminho A — Animacao: varios quadros com o MESMO personagem
-# ---------------------------------------------------------------------------
-
-if modo_animacao:
-    if not api_key:
-        st.warning(
-            "🔑 Cole a sua chave da API do Gemini no campo acima (ou no menu ☰ → "
-            "Configurações) para habilitar a geração."
-        )
-    if st.button(
-        f"🎬 Gerar animação ({len(quadros_animacao)} quadros)",
-        type="primary",
-        use_container_width=True,
-        disabled=not api_key,
-    ):
-        preparados = [sprite_tools.prepare_for_gemini(q) for q in quadros_animacao]
-        barra = st.progress(0.0, text="Iniciando...")
-
-        def atualizar(feitos: int, total: int, mensagem: str) -> None:
-            barra.progress(feitos / total, text=f"{mensagem} ({feitos}/{total})")
-
-        try:
-            resultados, referencia = transform_animation_frames(
-                preparados,
-                filter_name=filter_name,
-                extra_instructions=extra,
-                custom_style=custom_style,
-                creativity=creativity,
-                api_key=api_key or None,
-                reference_index=selecao.get("ref_pos", 0),
-                progress_callback=atualizar,
-            )
-            barra.empty()
-            st.session_state["anim"] = [
-                (r.index, sprite_tools.remove_background(r.image) if r.ok else None, r.error)
-                for r in resultados
-            ]
-            st.session_state["anim_label"] = original_label
-            st.session_state["anim_placements"] = selecao.get("placements", [])
-            st.session_state["anim_sheet_size"] = selecao.get("sheet_size")
-        except GeminiNotConfigured as exc:
-            barra.empty()
-            st.error(str(exc))
-        except Exception as exc:
-            barra.empty()
-            st.error(f"Erro na geração da animação: {exc}")
-            with st.expander("Detalhes técnicos"):
-                st.code(traceback.format_exc())
-
-    if st.session_state.get("anim_label") == original_label and st.session_state.get("anim"):
-        anim = st.session_state["anim"]
-        gerados = [(i, img) for i, img, _ in anim if img is not None]
-        falhas = [(i, err) for i, img, err in anim if img is None]
-
-        st.success(f"✅ {len(gerados)} de {len(anim)} quadros gerados com o mesmo personagem.")
-        if falhas:
-            with st.expander(f"⚠️ {len(falhas)} quadro(s) falharam — ver motivos"):
-                for i, err in falhas:
-                    st.write(f"**Quadro {i}:** {err}")
-
-        st.markdown("##### 🎬 Comparação quadro a quadro")
-        for i, novo in gerados:
-            col_o, col_n = st.columns(2)
-            with col_o:
-                st.image(quadros_animacao[i], caption=f"Original #{i}", width=140)
-            with col_n:
-                st.image(novo, caption=f"Gerado #{i}", width=140)
-
-        # --- Montagem dos arquivos prontos para o jogo ---------------------
-        sprites = [img for _, img in gerados]
-        colunas_grade = st.slider(
-            "Colunas na folha de sprites em grade",
-            1, 12, min(len(sprites), 6),
-            help="Quantos quadros por linha na folha uniforme. Motores de jogo "
-            "importam esse formato informando o tamanho da célula.",
-        )
-        folha_grade = sprite_tools.build_grid_sheet(sprites, columns=colunas_grade)
-        st.markdown("##### 🧾 Folha de sprites gerada (grade uniforme)")
-        st.image(folha_grade, use_container_width=True)
-        celula = (
-            folha_grade.width // colunas_grade,
-            folha_grade.height // ((len(sprites) + colunas_grade - 1) // colunas_grade),
-        )
-        st.caption(
-            f"Tamanho da célula: **{celula[0]}×{celula[1]} px** — use esse valor "
-            "ao importar a folha no seu motor de jogo (Unity, Godot, GameMaker)."
-        )
-
-        # Folha com o mesmo layout do arquivo original (encaixe direto)
-        folha_original = None
-        placements = st.session_state.get("anim_placements") or []
-        sheet_size = st.session_state.get("anim_sheet_size")
-        if sheet_size and len(placements) == len(anim):
-            pares = [(placements[i], img) for i, img in gerados]
-            folha_original = sprite_tools.rebuild_sheet_like_original(sheet_size, pares)
-
-        # --- ZIP com tudo -------------------------------------------------
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for pos, (i, img) in enumerate(gerados):
-                zf.writestr(f"quadros/frame_{pos:02d}_orig{i}.png", image_to_png_bytes(img))
-            zf.writestr("spritesheet_grade.png", image_to_png_bytes(folha_grade))
-            if folha_original is not None:
-                zf.writestr("spritesheet_layout_original.png", image_to_png_bytes(folha_original))
-            zf.writestr(
-                "LEIA-ME.txt",
-                (
-                    "Sprites gerados com RO Sprite Forge\r\n"
-                    f"Estilo: {custom_style.strip() or filter_name}\r\n"
-                    f"Quadros: {len(sprites)}\r\n"
-                    f"spritesheet_grade.png -> grade uniforme, celula "
-                    f"{celula[0]}x{celula[1]} px, {colunas_grade} colunas\r\n"
-                    "spritesheet_layout_original.png -> mesmo layout do arquivo "
-                    "enviado, para substituicao direta\r\n"
-                    "quadros/ -> cada pose em PNG separado, fundo transparente\r\n"
-                ).encode("utf-8"),
-            )
-
-        st.download_button(
-            "⬇️ Baixar animação completa (.zip: quadros + folhas de sprite)",
-            data=zip_buffer.getvalue(),
-            file_name="animacao_sprites.zip",
-            mime="application/zip",
-            type="primary",
-            use_container_width=True,
-        )
-        col_d1, col_d2 = st.columns(2)
-        with col_d1:
-            st.download_button(
-                "⬇️ Só a folha em grade (PNG)",
-                data=image_to_png_bytes(folha_grade),
-                file_name="spritesheet_grade.png",
-                mime="image/png",
-                use_container_width=True,
-            )
-        with col_d2:
-            if folha_original is not None:
-                st.download_button(
-                    "⬇️ Folha no layout original (PNG)",
-                    data=image_to_png_bytes(folha_original),
-                    file_name="spritesheet_layout_original.png",
-                    mime="image/png",
-                    use_container_width=True,
-                )
-
-# ---------------------------------------------------------------------------
-# Caminho B — sprite unico
-# ---------------------------------------------------------------------------
-
-elif base_sprite is None:
+if base_sprite is None:
     st.info("👆 Busque um sprite ou envie um arquivo para habilitar a transformação.")
 else:
     if not api_key:
@@ -610,6 +395,8 @@ else:
             st.session_state["result"] = final
             st.session_state["result_prompt"] = used_prompt
             st.session_state["result_label"] = original_label
+            # Fica guardado para a Etapa 2 poder anima-lo
+            st.session_state["personagem_gerado"] = final
         except GeminiNotConfigured as exc:
             st.error(str(exc))
         except Exception as exc:
@@ -636,3 +423,258 @@ else:
         )
         with st.expander("📜 Prompt utilizado na geração"):
             st.write(st.session_state["result_prompt"])
+
+        st.info(
+            "👇 Gostou do personagem? Desça até a **Etapa 2** para criar as "
+            "animações de movimento (ataque, defesa, avanço...) a partir dele."
+        )
+
+
+# ===========================================================================
+# ETAPA 2 — Animar o personagem gerado
+# ===========================================================================
+#
+# Aqui o personagem gerado na Etapa 1 e' a UNICA referencia visual: as poses
+# vem de texto. E' o que garante consistencia, ja que nao existe uma segunda
+# imagem (com outro estilo) competindo pela aparencia final.
+
+st.markdown("---")
+st.header("🎬 Etapa 2 — Criar animações do personagem")
+st.caption(
+    "Use o personagem gerado acima (ou envie um sprite pronto) para criar "
+    "sequências de movimento: ataque, defesa, avanço rápido, caminhada e mais."
+)
+
+personagem: Image.Image | None = None
+origem_personagem = ""
+
+fonte = st.radio(
+    "Qual personagem você quer animar?",
+    ["✨ O personagem gerado na Etapa 1", "📤 Enviar um sprite já pronto"],
+    key="fonte_personagem",
+)
+
+if fonte.startswith("✨"):
+    if "personagem_gerado" in st.session_state:
+        personagem = st.session_state["personagem_gerado"]
+        origem_personagem = "etapa1"
+        st.image(personagem, caption="Personagem que será animado", width=170)
+    else:
+        st.info(
+            "Nenhum personagem gerado ainda. Faça a Etapa 1 acima, ou escolha "
+            "**Enviar um sprite já pronto**."
+        )
+else:
+    enviado_anim = st.file_uploader(
+        "Envie o sprite do personagem (PNG com um personagem só)",
+        type=["png", "gif", "bmp", "webp"],
+        key="upload_personagem",
+    )
+    if enviado_anim is not None:
+        personagem = sprite_tools.remove_background(Image.open(enviado_anim))
+        origem_personagem = f"upload:{enviado_anim.name}"
+        st.image(personagem, caption=f"Personagem: {enviado_anim.name}", width=170)
+
+if personagem is not None:
+    col_acao, col_qtd = st.columns([2, 1])
+    with col_acao:
+        acao_label = st.selectbox("🎭 Movimento / ação", action_options())
+        acao_nome = strip_action_emoji(acao_label)
+        st.caption(ACTIONS[acao_nome]["resumo"])
+    with col_qtd:
+        n_quadros = st.slider("Quadros", 2, 8, 4, help="Mais quadros = animação mais fluida.")
+
+    with st.expander("🎯 Ou descreva um movimento próprio"):
+        acao_custom = st.text_area(
+            "Movimento personalizado",
+            placeholder="Ex.: saltando e girando a espada acima da cabeça...",
+            label_visibility="collapsed",
+        )
+    if acao_custom.strip():
+        st.info(f"🎯 Movimento personalizado: _{acao_custom.strip()}_")
+
+    metodo = st.radio(
+        "Como gerar os quadros?",
+        [
+            "🧷 Tira única — 1 chamada à API (mais consistente, recomendado)",
+            f"🔢 Quadro a quadro — {n_quadros} chamadas (mais controle)",
+        ],
+        key="metodo_anim",
+        help="Na tira única, todos os quadros saem de uma só geração, então o "
+        "personagem não tem como mudar entre eles. É o método mais confiável.",
+    )
+    extra_anim = st.text_input(
+        "✏️ Instruções extras para a animação (opcional)",
+        placeholder="Ex.: exagere o movimento da capa, mantenha o escudo visível...",
+        key="extra_anim",
+    )
+
+    if not api_key:
+        st.warning("🔑 Configure a chave da API acima para habilitar a geração.")
+
+    if st.button(
+        f"🎬 Gerar animação de {n_quadros} quadros",
+        type="primary",
+        use_container_width=True,
+        disabled=not api_key,
+        key="btn_anim",
+    ):
+        base_personagem = sprite_tools.prepare_for_gemini(personagem, target_size=640)
+        assinatura = f"{origem_personagem}|{acao_nome}|{acao_custom}|{n_quadros}|{metodo}"
+        try:
+            if metodo.startswith("🧷"):
+                with st.spinner(
+                    f"Gerando a tira com {n_quadros} poses em uma única chamada..."
+                ):
+                    tira, prompt_anim = generate_action_sheet(
+                        base_personagem,
+                        action_name=acao_nome,
+                        n_frames=n_quadros,
+                        custom_action=acao_custom,
+                        extra_instructions=extra_anim,
+                        api_key=api_key or None,
+                    )
+                quadros = sprite_tools.split_strip(tira, n_quadros)
+                falhas_anim: list[tuple[int, str]] = []
+                st.session_state["anim_tira"] = sprite_tools.remove_background(tira)
+            else:
+                barra = st.progress(0.0, text="Iniciando...")
+
+                def atualizar(feitos: int, total: int, mensagem: str) -> None:
+                    barra.progress(feitos / total, text=f"{mensagem} ({feitos}/{total})")
+
+                resultados = generate_action_frames(
+                    base_personagem,
+                    action_name=acao_nome,
+                    n_frames=n_quadros,
+                    custom_action=acao_custom,
+                    extra_instructions=extra_anim,
+                    api_key=api_key or None,
+                    progress_callback=atualizar,
+                )
+                barra.empty()
+                quadros = [
+                    sprite_tools.remove_background(r.image) for r in resultados if r.ok
+                ]
+                falhas_anim = [(r.index, r.error) for r in resultados if not r.ok]
+                prompt_anim = "Geração quadro a quadro (um prompt por pose)."
+                st.session_state.pop("anim_tira", None)
+
+            st.session_state["anim_quadros"] = quadros
+            st.session_state["anim_falhas"] = falhas_anim
+            st.session_state["anim_prompt"] = prompt_anim
+            st.session_state["anim_assinatura"] = assinatura
+            st.session_state["anim_titulo"] = acao_custom.strip() or acao_nome
+        except GeminiNotConfigured as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            st.error(f"Erro ao gerar a animação: {exc}")
+            with st.expander("Detalhes técnicos"):
+                st.code(traceback.format_exc())
+
+    # ---------------- Resultado da animacao ----------------
+    quadros_anim = st.session_state.get("anim_quadros") or []
+    if quadros_anim:
+        titulo = st.session_state.get("anim_titulo", "animação")
+        st.success(f"✅ {len(quadros_anim)} quadros gerados — **{titulo}**")
+
+        falhas_anim = st.session_state.get("anim_falhas") or []
+        if falhas_anim:
+            with st.expander(f"⚠️ {len(falhas_anim)} quadro(s) falharam"):
+                for i, err in falhas_anim:
+                    st.write(f"**Quadro {i}:** {err}")
+
+        if "anim_tira" in st.session_state:
+            st.markdown("##### 🧷 Tira gerada pela IA (antes do fatiamento)")
+            st.image(st.session_state["anim_tira"], use_container_width=True)
+
+        col_gif, col_frames = st.columns([1, 2])
+        with col_gif:
+            st.markdown("##### ▶️ Prévia animada")
+            velocidade = st.slider("ms por quadro", 60, 400, 140, 20, key="gif_ms")
+            try:
+                gif = sprite_tools.build_gif(quadros_anim, ms_per_frame=velocidade)
+                st.image(gif, caption=f"{titulo} ({len(quadros_anim)} quadros)")
+            except Exception as exc:
+                gif = None
+                st.warning(f"Não consegui montar a prévia animada: {exc}")
+        with col_frames:
+            st.markdown("##### 🧩 Quadros")
+            cols_q = st.columns(min(len(quadros_anim), 4))
+            for i, q in enumerate(quadros_anim):
+                with cols_q[i % len(cols_q)]:
+                    st.image(q, caption=f"#{i}", width=110)
+
+        colunas_grade = st.slider(
+            "Colunas na folha de sprites",
+            1, 8, min(len(quadros_anim), 4), key="cols_anim",
+        )
+        folha = sprite_tools.build_grid_sheet(quadros_anim, columns=colunas_grade)
+        linhas = (len(quadros_anim) + colunas_grade - 1) // colunas_grade
+        celula = (folha.width // colunas_grade, folha.height // linhas)
+        st.markdown("##### 🧾 Folha de sprites (grade uniforme)")
+        st.image(folha, use_container_width=True)
+        st.caption(
+            f"Tamanho da célula: **{celula[0]}×{celula[1]} px** — informe esse "
+            "valor ao importar a folha no seu motor de jogo."
+        )
+
+        nome_arquivo = "".join(
+            c if c.isalnum() else "_" for c in titulo.lower()
+        )[:30] or "animacao"
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for i, q in enumerate(quadros_anim):
+                zf.writestr(f"quadros/frame_{i:02d}.png", image_to_png_bytes(q))
+            zf.writestr("spritesheet.png", image_to_png_bytes(folha))
+            if gif:
+                zf.writestr("previa.gif", gif)
+            zf.writestr(
+                "LEIA-ME.txt",
+                (
+                    "Animacao gerada com RO Sprite Forge\r\n"
+                    f"Movimento: {titulo}\r\n"
+                    f"Quadros: {len(quadros_anim)}\r\n"
+                    f"spritesheet.png -> grade de {colunas_grade} coluna(s), "
+                    f"celula {celula[0]}x{celula[1]} px\r\n"
+                    "quadros/ -> cada pose em PNG separado, fundo transparente\r\n"
+                    "previa.gif -> animacao para conferir o movimento\r\n"
+                ).encode("utf-8"),
+            )
+
+        st.download_button(
+            "⬇️ Baixar animação (.zip: quadros + folha + GIF)",
+            data=zip_buffer.getvalue(),
+            file_name=f"animacao_{nome_arquivo}.zip",
+            mime="application/zip",
+            type="primary",
+            use_container_width=True,
+            key="dl_anim_zip",
+        )
+        col_z1, col_z2 = st.columns(2)
+        with col_z1:
+            st.download_button(
+                "⬇️ Só a folha de sprites (PNG)",
+                data=image_to_png_bytes(folha),
+                file_name=f"spritesheet_{nome_arquivo}.png",
+                mime="image/png",
+                use_container_width=True,
+                key="dl_anim_folha",
+            )
+        with col_z2:
+            if gif:
+                st.download_button(
+                    "⬇️ Só o GIF animado",
+                    data=gif,
+                    file_name=f"{nome_arquivo}.gif",
+                    mime="image/gif",
+                    use_container_width=True,
+                    key="dl_anim_gif",
+                )
+
+        st.caption(
+            "💡 Dica: para um jogo completo, gere uma animação por ação "
+            "(ataque, defesa, caminhada...) sempre a partir do **mesmo** "
+            "personagem da Etapa 1 — assim todas ficam consistentes entre si."
+        )

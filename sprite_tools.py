@@ -15,6 +15,7 @@ Responsabilidades:
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -354,6 +355,71 @@ def build_grid_sheet(
         col, row = i % columns, i // columns
         sheet.paste(cell, (col * step_w, row * step_h), cell)
     return sheet
+
+
+def split_strip(strip: Image.Image, n_frames: int) -> list[Image.Image]:
+    """
+    Fatia uma tira horizontal de animacao em `n_frames` quadros.
+
+    Primeiro tenta a deteccao por conteudo (mais precisa, respeita o espaco
+    branco entre os quadros). Se o numero detectado nao bater com o esperado —
+    o modelo pode encostar dois quadros ou deixar um membro esticado entre
+    eles — cai para a divisao em colunas iguais, que sempre devolve N quadros.
+    """
+    limpa = remove_background(strip)
+    detectados = slice_frames(limpa, min_size=max(8, limpa.width // (n_frames * 6)))
+
+    if len(detectados) == n_frames:
+        return [f.image for f in detectados]
+
+    # Fallback: divide a largura em N faixas iguais e recorta o conteudo de cada
+    largura = limpa.width // n_frames
+    quadros: list[Image.Image] = []
+    for i in range(n_frames):
+        x0 = i * largura
+        x1 = limpa.width if i == n_frames - 1 else (i + 1) * largura
+        fatia = limpa.crop((x0, 0, x1, limpa.height))
+        bbox = fatia.getbbox()
+        quadros.append(fatia.crop(bbox) if bbox else fatia)
+    return quadros
+
+
+def build_gif(
+    sprites: list[Image.Image],
+    ms_per_frame: int = 140,
+    loop: bool = True,
+    background: tuple[int, int, int] = (255, 255, 255),
+) -> bytes:
+    """
+    Monta um GIF animado para pre-visualizar o movimento na propria interface.
+
+    Todos os quadros sao normalizados para a mesma celula, ancorados pelos pes,
+    de modo que o GIF mostre exatamente o alinhamento que o jogo teria.
+    """
+    if not sprites:
+        raise ValueError("Nenhum quadro para montar o GIF.")
+
+    recortados = [crop_to_content(s) for s in sprites]
+    cell = (max(s.width for s in recortados), max(s.height for s in recortados))
+
+    quadros_rgb: list[Image.Image] = []
+    for sprite in recortados:
+        cell_img = fit_into_box(sprite, cell, anchor="bottom")
+        plano = Image.new("RGB", cell, background)
+        plano.paste(cell_img, (0, 0), cell_img)
+        quadros_rgb.append(plano)
+
+    buffer = io.BytesIO()
+    quadros_rgb[0].save(
+        buffer,
+        format="GIF",
+        save_all=True,
+        append_images=quadros_rgb[1:],
+        duration=ms_per_frame,
+        loop=0 if loop else 1,
+        disposal=2,
+    )
+    return buffer.getvalue()
 
 
 def save_png(img: Image.Image, path: str | Path) -> Path:
