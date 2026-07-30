@@ -34,6 +34,8 @@ sprites/
 ├── keywords.py           # Dicionário PT-BR → EN (ex.: "Algoz" → "Assassin Cross")
 ├── requirements.txt      # Dependências Python
 ├── packages.txt          # Dependências de sistema (Chromium na nuvem)
+├── instalar_e_abrir_WINDOWS.bat   # Instalador com 1 clique (Windows)
+├── instalar_e_abrir_MAC.command   # Instalador com 1 clique (Mac)
 ├── .env.example          # Modelo do arquivo de configuração da chave de API
 ├── data/                 # (criada automaticamente) índice JSON + downloads
 │   ├── sprite_index.json
@@ -43,7 +45,42 @@ sprites/
 
 ---
 
-## 🚀 Instalação (passo a passo)
+## 💻 Instalação fácil (para quem não programa)
+
+Se você nunca usou terminal/linha de comando, use este caminho:
+
+1. **Baixe o projeto**: no topo desta página do GitHub, clique no botão verde
+   **"Code"** → **"Download ZIP"**. Extraia o arquivo `.zip` baixado em uma
+   pasta do seu computador (ex.: Área de Trabalho).
+2. **Instale o Python**, se ainda não tiver: acesse
+   [python.org/downloads](https://www.python.org/downloads/) e instale a
+   versão mais recente.
+   - **Windows**: na tela do instalador, marque a caixinha **"Add Python to
+     PATH"** antes de clicar em Instalar. Esse passo é essencial.
+   - **Mac**: pode seguir o instalador normalmente, sem opções especiais.
+3. **Abra a pasta** onde você extraiu o projeto e dê **dois cliques** no
+   arquivo:
+   - Windows: `instalar_e_abrir_WINDOWS.bat`
+   - Mac: `instalar_e_abrir_MAC.command`
+     *(No Mac, se aparecer um aviso de segurança na primeira vez, clique com o
+     botão direito no arquivo → "Abrir" → confirme "Abrir".)*
+4. Uma janela preta (terminal) vai abrir sozinha e preparar tudo — na
+   primeira vez isso demora de 3 a 10 minutos, dependendo da internet. Não
+   feche a janela, apenas aguarde.
+5. Quando terminar, o aplicativo abre **automaticamente no seu navegador**.
+   Pronto — é só usar.
+
+Da próxima vez, para abrir o app de novo, basta dar dois cliques no mesmo
+arquivo (`.bat` ou `.command`) — ele já estará instalado e abrirá em segundos.
+
+> Falta a chave da API do Gemini? Veja a seção
+> [🔑 Configurar a chave da API do Gemini](#-configurar-a-chave-da-api-do-gemini)
+> mais abaixo — ou use o **motor Pollinations** dentro do app, que não exige
+> chave nenhuma.
+
+---
+
+## 🚀 Instalação via terminal (para quem já tem experiência)
 
 Pré-requisito: **Python 3.10 ou superior** ([download](https://www.python.org/downloads/) —
 no Windows, marque a opção *"Add Python to PATH"* durante a instalação).
