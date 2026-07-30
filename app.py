@@ -39,10 +39,12 @@ import scraper
 import sprite_tools
 from gemini_transform import (
     ACTIONS,
+    DEFAULT_INTENSITY,
     FILTER_UI,
     FILTERS,
     GeminiNotConfigured,
     action_options,
+    intensity_info,
     filter_options,
     generate_action_frames,
     generate_action_sheet,
@@ -151,13 +153,6 @@ if api_key:
     st.sidebar.success(f"🔑 Chave {origem} — pronto para gerar!")
 else:
     st.sidebar.warning("🔑 Nenhuma chave da API configurada.")
-
-creativity = st.sidebar.slider(
-    "🎲 Nível de variação (criatividade)",
-    0.0, 1.0, 0.7, 0.05,
-    help="Valores altos geram resultados mais diferentes do original — "
-    "recomendado para garantir um sprite inédito.",
-)
 
 if st.sidebar.button("🔄 Reconstruir índice do site"):
     cached_index.clear()
@@ -366,6 +361,27 @@ extra = st.text_input(
     placeholder="Ex.: adicione uma capa esvoaçante, deixe a armadura dourada...",
 )
 
+# --- Grau de alteracao (1 a 10) --------------------------------------------
+st.markdown("##### 🎚️ Quanto o sprite deve ser alterado?")
+intensidade = st.slider(
+    "Grau de alteração",
+    1, 10, DEFAULT_INTENSITY,
+    label_visibility="collapsed",
+    help="1 = quase nenhuma alteração (mesmo sprite, só tratamento de cor). "
+    "10 = personagem completamente diferente, mantendo só a postura.",
+)
+nivel = intensity_info(intensidade)
+st.caption(f"**{intensidade}/10 — {nivel['rotulo']}:** {nivel['descricao']}")
+st.progress(intensidade / 10)
+
+if intensidade <= 2:
+    st.warning(
+        "⚠️ Nesse grau o resultado fica muito próximo do sprite original da "
+        "Gravity — bom para testar o estilo, mas evite usar comercialmente."
+    )
+with st.expander("📋 Ver a regra exata enviada à IA neste grau"):
+    st.write(nivel["regra"])
+
 if base_sprite is None:
     st.info("👆 Busque um sprite ou envie um arquivo para habilitar a transformação.")
 else:
@@ -388,7 +404,7 @@ else:
                     filter_name=filter_name,
                     extra_instructions=extra,
                     custom_style=custom_style,
-                    creativity=creativity,
+                    intensity=intensidade,
                     api_key=api_key or None,
                 )
             final = sprite_tools.remove_background(result)
@@ -492,6 +508,13 @@ if personagem is not None:
         )
     if acao_custom.strip():
         st.info(f"🎯 Movimento personalizado: _{acao_custom.strip()}_")
+
+    st.caption(
+        "🔒 Na Etapa 2 a fidelidade é sempre **máxima**: a IA recebe a ordem de "
+        "copiar o personagem detalhe por detalhe (cores, arma, armadura, "
+        "cabelo, acessórios) e mudar **apenas a pose**. Aqui não existe grau de "
+        "alteração — quem define o visual é a Etapa 1."
+    )
 
     metodo = st.radio(
         "Como gerar os quadros?",

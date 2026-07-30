@@ -114,10 +114,40 @@ O navegador abre automaticamente em `http://localhost:8501`. Fluxo de uso:
 3. Decida entre a **imagem inteira** (recomendado) ou um **quadro específico**
    (o app fatia os quadros automaticamente e mostra um mapa numerado).
 4. Selecione o **filtro de estilo** entre os 13 disponíveis (ou descreva o seu)
-   e o **nível de variação**.
+   e o **grau de alteração** de 1 a 10 (veja a seção abaixo).
 5. Clique em **"✨ Transformar sprite com Gemini"** e compare o antes/depois.
 6. Baixe o PNG final com fundo transparente — ou siga para a **Etapa 2** e crie
    as animações de movimento a partir dele.
+
+---
+
+## 🎚️ Grau de alteração (1 a 10)
+
+Antes de gerar, você define **quanto** o sprite deve ser alterado. Isso dá
+controle real sobre o resultado, em vez de aceitar o que a IA decidir:
+
+| Grau | Nome | O que acontece |
+| :--: | --- | --- |
+| 1 | Praticamente idêntico | Só um leve tratamento de cor. O sprite continua o mesmo. |
+| 2 | Retoque leve | Mesmo personagem, com acabamento e sombreamento melhores. |
+| 3 | Ajuste sutil | Mesmas peças de equipamento, cores puxadas para o estilo. |
+| 4 | Reestilização branda | Mesmo equipamento, materiais e ornamentos repaginados. |
+| 5 | Equilibrado | Silhueta e tipo de equipamento preservados, visual novo. |
+| 6 | Reimaginação moderada | Mesma classe e silhueta, roupas e cores redesenhadas. |
+| 7 | Reimaginação forte | Só pose e proporções se mantêm; o resto é novo. *(padrão)* |
+| 8 | Personagem novo | Outro personagem, na mesma pose e silhueta. |
+| 9 | Reinvenção | Design totalmente novo; a pose serve só de esqueleto. |
+| 10 | Completamente diferente | Personagem inédito; mantém apenas a postura corporal. |
+
+**Como funciona por dentro:** cada grau tem a sua **própria instrução** enviada
+ao modelo (você pode lê-la no app, em *"Ver a regra exata enviada à IA"*), e a
+temperatura acompanha em segundo plano (0,15 no grau 1 até 1,15 no grau 10).
+Mexer só na temperatura não resolveria — ela controla a aleatoriedade, não o
+quanto o desenho muda; é a instrução que faz esse trabalho.
+
+> ⚖️ Nos graus **1 e 2** o resultado fica muito próximo do sprite original da
+> Gravity. É útil para testar um estilo, mas o app exibe um aviso: evite uso
+> comercial nesses graus.
 
 ---
 
@@ -144,6 +174,19 @@ personagem muda de um quadro para o outro.
 
 A abordagem atual elimina a causa: na Etapa 2 o personagem gerado é a **única**
 imagem enviada, e a pose vem de **texto**. Não há um segundo estilo competindo.
+
+**A Etapa 2 trabalha sempre com fidelidade máxima** (não há grau de alteração
+aqui — quem define o visual é a Etapa 1). Para segurar o desenho no lugar:
+
+- a instrução trata a imagem como uma **folha de modelo** e enumera item por
+  item o que deve ser copiado (cor exata de cada peça, formato do capacete,
+  tipo e cor da arma, acessórios, paleta, tom de pele, proporções);
+- inclui uma lista explícita de **proibições** (trocar a arma, mudar cores,
+  acrescentar ou remover elementos, alterar proporções ou estilo);
+- a temperatura cai para **0,12** — o mínimo prático, já que aqui não queremos
+  criatividade nenhuma;
+- a **imagem é enviada antes do texto**, o que ancora melhor a geração na
+  referência visual.
 
 Além disso, o método recomendado gera **todos os quadros em uma única chamada**,
 como uma tira horizontal que o app depois fatia. Uma geração única não tem como
