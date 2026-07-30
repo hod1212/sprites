@@ -103,6 +103,13 @@ if [ ! -d "$HOME/Library/Caches/ms-playwright" ]; then
     python3 -m playwright install chromium
 fi
 
+# Evita a pergunta de e-mail que o Streamlit faz na 1a execucao, que
+# travaria o terminal esperando resposta sem explicar isso na tela.
+mkdir -p "$HOME/.streamlit"
+if [ ! -f "$HOME/.streamlit/credentials.toml" ]; then
+    printf '[general]\nemail = ""\n' > "$HOME/.streamlit/credentials.toml"
+fi
+
 # --- 4. Abre o aplicativo -------------------------------------------------
 echo ""
 echo "[3/3] Abrindo o RO Sprite Forge no seu navegador..."

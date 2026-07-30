@@ -130,6 +130,16 @@ if not exist "%USERPROFILE%\AppData\Local\ms-playwright" (
     python -m playwright install chromium
 )
 
+REM Evita a pergunta de e-mail que o Streamlit faz na 1a execucao, que
+REM travaria o terminal esperando resposta sem explicar isso na tela.
+if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit"
+if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
+    (
+        echo [general]
+        echo email = ""
+    ) > "%USERPROFILE%\.streamlit\credentials.toml"
+)
+
 REM --- 4. Abre o aplicativo ----------------------------------------------
 echo.
 echo [3/3] Abrindo o RO Sprite Forge no seu navegador...
