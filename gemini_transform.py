@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import os
 import time
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from PIL import Image
@@ -154,6 +155,34 @@ PROMPT_TEMPLATE = (
 )
 
 
+# Prompt usado nos quadros seguintes de uma animacao: recebe DUAS imagens —
+# o personagem ja estilizado (referencia de identidade) e o quadro original
+# (referencia de pose). E' o que garante que a animacao mostre o MESMO
+# personagem se movendo, e nao um personagem diferente por quadro.
+ANIM_PROMPT_TEMPLATE = (
+    "Voce recebeu duas imagens. "
+    "A IMAGEM 1 e' a folha de identidade do personagem: define exatamente "
+    "quem ele e' — roupas, armadura, cores, cabelo, arma e todos os detalhes "
+    "de design. A IMAGEM 2 e' um quadro de animacao do sprite original e "
+    "define apenas a POSE. "
+    "Gere um unico sprite novo que seja O MESMO PERSONAGEM da IMAGEM 1 "
+    "executando exatamente a POSE da IMAGEM 2. REGRAS OBRIGATORIAS: "
+    "(1) CONSISTENCIA ABSOLUTA de personagem: copie fielmente da IMAGEM 1 as "
+    "mesmas cores, o mesmo formato de armadura e roupas, o mesmo cabelo, a "
+    "mesma arma e os mesmos detalhes. NAO invente nem altere nenhum elemento "
+    "do design — esta e' a regra mais importante, pois os quadros serao usados "
+    "em sequencia como animacao. "
+    "(2) Copie da IMAGEM 2 apenas a pose: posicao de bracos, pernas, tronco, "
+    "cabeca, direcao em que o personagem olha e angulo da arma. "
+    "(3) Mantenha a mesma escala, proporcoes e enquadramento da IMAGEM 1, para "
+    "que os quadros se alinhem perfeitamente na animacao. "
+    "(4) O estilo visual continua sendo: {style}. "
+    "(5) O fundo deve ser 100% branco solido puro (#FFFFFF), sem sombras "
+    "projetadas, sem cenario, sem molduras e sem texto. "
+    "{extra}"
+)
+
+
 def build_prompt(filter_name: str, extra_instructions: str = "", custom_style: str = "") -> str:
     """Monta o prompt final a partir do filtro escolhido (ou estilo livre)."""
     style = custom_style.strip() or FILTERS.get(filter_name, filter_name)
@@ -161,6 +190,17 @@ def build_prompt(filter_name: str, extra_instructions: str = "", custom_style: s
     if extra_instructions.strip():
         extra = f"Instrucoes adicionais do usuario: {extra_instructions.strip()}."
     return PROMPT_TEMPLATE.format(style=style, extra=extra)
+
+
+def build_animation_prompt(
+    filter_name: str, extra_instructions: str = "", custom_style: str = ""
+) -> str:
+    """Prompt dos quadros seguintes, com referencia de personagem + de pose."""
+    style = custom_style.strip() or FILTERS.get(filter_name, filter_name)
+    extra = ""
+    if extra_instructions.strip():
+        extra = f"Instrucoes adicionais do usuario: {extra_instructions.strip()}."
+    return ANIM_PROMPT_TEMPLATE.format(style=style, extra=extra)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +232,7 @@ def transform_sprite(
     creativity: float = 0.7,
     api_key: str | None = None,
     max_retries: int = 3,
+    reference_image: Image.Image | None = None,
 ) -> tuple[Image.Image, str]:
     """
     Pipeline Img2Img: envia (imagem base + prompt) e devolve a imagem gerada.
@@ -205,16 +246,36 @@ def transform_sprite(
                           valores altos geram resultados mais distintos do
                           original (bom para evitar copia direta)
       api_key             sobrescreve a variavel de ambiente, se informado
+      reference_image     quando informado, ativa o modo animacao: o sprite ja
+                          estilizado entra como referencia de IDENTIDADE do
+                          personagem e `base_image` passa a definir apenas a
+                          POSE — e' o que mantem o mesmo personagem em todos os
+                          quadros de um ciclo de animacao
 
     Retorna (imagem_gerada, prompt_utilizado).
     """
     from google.genai import types
 
     client = _get_client(api_key)
-    prompt = build_prompt(filter_name, extra_instructions, custom_style)
 
-    # temperature 0.55..1.15: nunca tao baixa a ponto de "clonar" o original
-    temperature = 0.55 + 0.6 * max(0.0, min(1.0, creativity))
+    modo_animacao = reference_image is not None
+    if modo_animacao:
+        prompt = build_animation_prompt(filter_name, extra_instructions, custom_style)
+        # Temperatura baixa e fixa: nos quadros seguintes queremos fidelidade
+        # ao personagem, nao criatividade (que quebraria a consistencia).
+        temperature = 0.25
+        contents = [
+            "IMAGEM 1 — referencia de identidade do personagem:",
+            reference_image,
+            "IMAGEM 2 — quadro original que define apenas a pose:",
+            base_image,
+            prompt,
+        ]
+    else:
+        prompt = build_prompt(filter_name, extra_instructions, custom_style)
+        # temperature 0.55..1.15: nunca tao baixa a ponto de "clonar" o original
+        temperature = 0.55 + 0.6 * max(0.0, min(1.0, creativity))
+        contents = [prompt, base_image]
 
     config = types.GenerateContentConfig(
         temperature=temperature,
@@ -226,7 +287,7 @@ def transform_sprite(
         try:
             response = client.models.generate_content(
                 model=IMAGE_MODEL,
-                contents=[prompt, base_image],
+                contents=contents,
                 config=config,
             )
             image = _extract_image(response)
@@ -257,6 +318,102 @@ def transform_sprite(
         time.sleep(2 ** attempt)
 
     raise RuntimeError(f"Falha ao gerar imagem apos {max_retries} tentativas: {last_error}")
+
+
+# ---------------------------------------------------------------------------
+# Modo animacao: varios quadros com o MESMO personagem
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FrameResult:
+    """Resultado da transformacao de um quadro da animacao."""
+
+    index: int                      # posicao do quadro na lista enviada
+    image: Image.Image | None       # sprite gerado (None se falhou)
+    error: str = ""                 # motivo da falha, quando houver
+
+    @property
+    def ok(self) -> bool:
+        return self.image is not None
+
+
+def transform_animation_frames(
+    frames: list[Image.Image],
+    filter_name: str,
+    extra_instructions: str = "",
+    custom_style: str = "",
+    creativity: float = 0.7,
+    api_key: str | None = None,
+    reference_index: int = 0,
+    pause_between: float = 1.0,
+    progress_callback=None,
+) -> tuple[list[FrameResult], Image.Image | None]:
+    """
+    Transforma varios quadros mantendo o MESMO personagem em todos.
+
+    Estrategia (a mesma usada para consistencia de personagem em producao):
+      1. O quadro `reference_index` e' transformado normalmente e define o
+         design do personagem (roupas, cores, arma...).
+      2. Cada quadro seguinte e' gerado com DUAS imagens: o personagem ja
+         estilizado (identidade) + o quadro original (pose). Assim a sequencia
+         mostra o mesmo personagem se movendo, e nao personagens diferentes.
+
+    Um quadro que falhar nao interrompe os demais: ele volta com `error`
+    preenchido, e os quadros bem-sucedidos continuam utilizaveis.
+
+    `progress_callback(concluidos, total, mensagem)` permite atualizar a
+    barra de progresso da interface.
+
+    Retorna (lista de FrameResult na ordem original, imagem de referencia).
+    """
+    if not frames:
+        return [], None
+
+    reference_index = max(0, min(reference_index, len(frames) - 1))
+    total = len(frames)
+    results: list[FrameResult | None] = [None] * total
+
+    def relatar(feitos: int, mensagem: str) -> None:
+        if progress_callback:
+            progress_callback(feitos, total, mensagem)
+
+    # --- Passo 1: o quadro de referencia define o personagem ---------------
+    relatar(0, f"Criando o design do personagem (quadro {reference_index + 1})...")
+    reference_image, _ = transform_sprite(
+        frames[reference_index],
+        filter_name=filter_name,
+        extra_instructions=extra_instructions,
+        custom_style=custom_style,
+        creativity=creativity,
+        api_key=api_key,
+    )
+    results[reference_index] = FrameResult(reference_index, reference_image)
+    relatar(1, "Design do personagem definido. Gerando as demais poses...")
+
+    # --- Passo 2: demais quadros herdam a identidade do personagem --------
+    feitos = 1
+    for i, frame in enumerate(frames):
+        if i == reference_index:
+            continue
+        try:
+            if pause_between:
+                time.sleep(pause_between)  # respeita o limite de requisicoes
+            image, _ = transform_sprite(
+                frame,
+                filter_name=filter_name,
+                extra_instructions=extra_instructions,
+                custom_style=custom_style,
+                creativity=creativity,
+                api_key=api_key,
+                reference_image=reference_image,
+            )
+            results[i] = FrameResult(i, image)
+        except Exception as exc:
+            results[i] = FrameResult(i, None, error=str(exc))
+        feitos += 1
+        relatar(feitos, f"Quadro {feitos} de {total} processado.")
+
+    return [r for r in results if r is not None], reference_image
 
 
 def _extract_image(response) -> Image.Image | None:

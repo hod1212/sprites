@@ -211,6 +211,151 @@ def prepare_for_gemini(
     return flat.convert("RGB")
 
 
+# ---------------------------------------------------------------------------
+# Remontagem de spritesheet (para uso em motores de jogo)
+# ---------------------------------------------------------------------------
+
+def annotate_frames(
+    sheet: Image.Image,
+    frames: list["Frame"],
+    max_labels: int = 80,
+) -> Image.Image:
+    """
+    Devolve a folha de sprites com cada quadro numerado — um "mapa" que deixa
+    o usuario identificar os quadros de uma so olhada, em vez de rolar dezenas
+    de miniaturas (essencial no celular).
+    """
+    from PIL import ImageDraw, ImageFont
+
+    base = sheet.convert("RGBA")
+    # Amplia folhas pequenas para os numeros ficarem legiveis
+    escala = max(1, min(4, 900 // max(1, base.width)))
+    if escala > 1:
+        base = base.resize((base.width * escala, base.height * escala), Image.NEAREST)
+
+    # Fundo xadrez claro, para o sprite transparente ficar visivel
+    fundo = Image.new("RGBA", base.size, (255, 255, 255, 255))
+    quadrado = 8 * escala
+    desenho_fundo = ImageDraw.Draw(fundo)
+    for y in range(0, base.height, quadrado):
+        for x in range(0, base.width, quadrado):
+            if (x // quadrado + y // quadrado) % 2:
+                desenho_fundo.rectangle(
+                    [x, y, x + quadrado, y + quadrado], fill=(230, 230, 235, 255)
+                )
+    fundo.alpha_composite(base)
+
+    d = ImageDraw.Draw(fundo)
+    try:
+        fonte = ImageFont.load_default(size=11 * escala)
+    except TypeError:  # Pillow antigo nao aceita o parametro size
+        fonte = ImageFont.load_default()
+
+    for i, frame in enumerate(frames[:max_labels]):
+        x0, y0, x1, y1 = (v * escala for v in frame.bbox)
+        d.rectangle([x0, y0, x1 - 1, y1 - 1], outline=(255, 60, 60, 255), width=max(1, escala))
+        rotulo = str(i)
+        largura_rotulo = 7 * escala * len(rotulo) + 4 * escala
+        d.rectangle(
+            [x0, y0, x0 + largura_rotulo, y0 + 13 * escala], fill=(255, 60, 60, 255)
+        )
+        d.text((x0 + 2 * escala, y0 + escala), rotulo, fill=(255, 255, 255, 255), font=fonte)
+    return fundo
+
+
+def crop_to_content(img: Image.Image) -> Image.Image:
+    """Remove a borda transparente, deixando apenas o desenho."""
+    img = img.convert("RGBA")
+    bbox = img.getbbox()
+    return img.crop(bbox) if bbox else img
+
+
+def fit_into_box(
+    img: Image.Image,
+    box_size: tuple[int, int],
+    anchor: str = "bottom",
+) -> Image.Image:
+    """
+    Encaixa o sprite em uma celula de tamanho fixo, sem distorcer.
+
+    O ancoramento importa para animacao: com `anchor="bottom"` os pes ficam
+    sempre na mesma altura, evitando que o personagem "pule" entre quadros.
+    """
+    img = crop_to_content(img)
+    box_w, box_h = box_size
+    if img.width == 0 or img.height == 0:
+        return Image.new("RGBA", box_size, (0, 0, 0, 0))
+
+    scale = min(box_w / img.width, box_h / img.height)
+    new_size = (max(1, round(img.width * scale)), max(1, round(img.height * scale)))
+    resized = img.resize(new_size, Image.LANCZOS)
+
+    cell = Image.new("RGBA", box_size, (0, 0, 0, 0))
+    x = (box_w - new_size[0]) // 2
+    y = box_h - new_size[1] if anchor == "bottom" else (box_h - new_size[1]) // 2
+    cell.paste(resized, (x, y), resized)
+    return cell
+
+
+def rebuild_sheet_like_original(
+    sheet_size: tuple[int, int],
+    placements: list[tuple[tuple[int, int, int, int], Image.Image]],
+    anchor: str = "bottom",
+) -> Image.Image:
+    """
+    Remonta um spritesheet com o MESMO layout do original.
+
+    `placements` e' uma lista de (bbox_no_sheet_original, sprite_novo). Cada
+    sprite novo e' redimensionado para caber no espaco que o quadro original
+    ocupava, o que mantem o alinhamento esperado por motores de jogo.
+    """
+    sheet = Image.new("RGBA", sheet_size, (0, 0, 0, 0))
+    for (x0, y0, x1, y1), sprite in placements:
+        cell = fit_into_box(sprite, (x1 - x0, y1 - y0), anchor=anchor)
+        sheet.paste(cell, (x0, y0), cell)
+    return sheet
+
+
+def build_grid_sheet(
+    sprites: list[Image.Image],
+    columns: int = 0,
+    cell_size: tuple[int, int] | None = None,
+    anchor: str = "bottom",
+    padding: int = 0,
+) -> Image.Image:
+    """
+    Monta um spritesheet novo em grade uniforme — o formato que a maioria dos
+    motores (Unity, Godot, GameMaker) importa como "sprite sheet by cell size".
+
+    Todas as celulas ficam com o mesmo tamanho, o que permite configurar a
+    animacao informando apenas largura e altura da celula.
+    """
+    if not sprites:
+        raise ValueError("Nenhum sprite para montar a grade.")
+
+    cropped = [crop_to_content(s) for s in sprites]
+    if cell_size is None:
+        cell_w = max(s.width for s in cropped)
+        cell_h = max(s.height for s in cropped)
+        cell_size = (cell_w, cell_h)
+
+    columns = columns or min(len(sprites), 8)
+    rows = (len(sprites) + columns - 1) // columns
+
+    cell_w, cell_h = cell_size
+    step_w, step_h = cell_w + padding, cell_h + padding
+    sheet = Image.new(
+        "RGBA",
+        (columns * step_w - padding, rows * step_h - padding),
+        (0, 0, 0, 0),
+    )
+    for i, sprite in enumerate(cropped):
+        cell = fit_into_box(sprite, cell_size, anchor=anchor)
+        col, row = i % columns, i // columns
+        sheet.paste(cell, (col * step_w, row * step_h), cell)
+    return sheet
+
+
 def save_png(img: Image.Image, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

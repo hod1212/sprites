@@ -115,6 +115,59 @@ O navegador abre automaticamente em `http://localhost:8501`. Fluxo de uso:
 5. Clique em **"✨ Transformar sprite com Gemini"** e compare o antes/depois.
 6. Baixe o PNG final com fundo transparente.
 
+---
+
+## 🎬 Modo animação (vários quadros para usar em jogo)
+
+Um sprite só não serve para animar um personagem em um jogo — você precisa do
+ciclo de movimento inteiro. O modo animação resolve isso:
+
+1. Envie (ou busque) um spritesheet com várias poses.
+2. Escolha **"🎬 Animação — vários quadros (para usar em jogo)"**.
+3. O app fatia a folha e mostra um **mapa numerado** dos quadros.
+4. Selecione o intervalo de quadros de um mesmo movimento (ex.: o ciclo de
+   caminhada em uma direção) e qual quadro define o design do personagem.
+5. Clique em **"🎬 Gerar animação"** e acompanhe a barra de progresso.
+
+### Como a consistência do personagem é garantida
+
+Este é o ponto crítico: se cada quadro fosse gerado isoladamente, sairia um
+personagem diferente em cada um e a animação ficaria inútil. A solução:
+
+- O **primeiro quadro** é transformado normalmente e define o design
+  (armadura, cores, arma, cabelo).
+- Cada quadro seguinte é gerado com **duas imagens** enviadas juntas: o
+  personagem já estilizado (referência de *identidade*) + o quadro original
+  (referência de *pose*), com instrução explícita para copiar o design da
+  primeira e apenas a pose da segunda.
+- Nesses quadros a temperatura do modelo cai para `0.25` — queremos
+  fidelidade ao personagem, não criatividade.
+
+### O que você baixa
+
+Um `.zip` contendo:
+
+| Arquivo | Para que serve |
+| --- | --- |
+| `spritesheet_grade.png` | Folha em **grade uniforme** — o app informa o tamanho exato da célula para você importar em Unity, Godot ou GameMaker. |
+| `spritesheet_layout_original.png` | Folha com o **mesmo layout do arquivo enviado**, para substituição direta. |
+| `quadros/frame_XX.png` | Cada pose em PNG separado, fundo transparente. |
+| `LEIA-ME.txt` | Estilo usado, número de quadros e tamanho da célula. |
+
+Os quadros são alinhados **pelos pés** (ancoragem inferior), o que evita o
+personagem "pular" entre os quadros durante a animação.
+
+### Avisos práticos
+
+- **Cada quadro é uma chamada à API.** 6 quadros ≈ 6 chamadas (≈1 minuto). O
+  app avisa o custo estimado antes de começar e limita a 24 quadros por vez.
+- **Se um quadro falhar** (cota, filtro de segurança), os outros continuam: o
+  app mostra quais falharam e você ainda baixa os que deram certo.
+- **Dica de qualidade:** selecione quadros de um único movimento e uma única
+  direção por vez. Misturar direções na mesma geração piora a consistência.
+
+---
+
 ### Uso pelo terminal (opcional, sem interface)
 
 ```bash
@@ -190,6 +243,8 @@ sua internet residencial.
 | **Modelo `gemini-2.5-flash-image`** | É o modelo do Gemini especializado em geração/edição de imagem (Img2Img) via prompt multimodal (imagem + texto). |
 | **Fundo branco antes da IA + remoção depois** | Modelos de imagem trabalham mal com transparência; enviamos fundo branco sólido e recuperamos o alpha no final. |
 | **`temperature` mínima de 0.55** | Impede que o modelo "copie" o sprite: o resultado é sempre uma reinterpretação, nunca um clone. |
+| **Imagem de referência no modo animação** | Enviar o personagem já estilizado junto com o quadro original é o que mantém o mesmo personagem em todos os quadros — sem isso, cada quadro viraria um personagem diferente. |
+| **Mapa numerado em vez de miniaturas** | Em telas estreitas as miniaturas em colunas empilham e ficam gigantes; uma imagem única com os quadros numerados é legível no celular. |
 
 ## ⚖️ Aviso legal
 
