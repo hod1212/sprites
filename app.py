@@ -24,7 +24,14 @@ from PIL import Image
 
 import scraper
 import sprite_tools
-from gemini_transform import FILTERS, GeminiNotConfigured, transform_sprite
+from gemini_transform import (
+    FILTER_UI,
+    FILTERS,
+    GeminiNotConfigured,
+    filter_options,
+    strip_emoji,
+    transform_sprite,
+)
 
 st.set_page_config(page_title="RO Sprite Forge", page_icon="🗡️", layout="wide")
 
@@ -106,12 +113,6 @@ if api_key:
 else:
     st.sidebar.warning("🔑 Nenhuma chave da API configurada.")
 
-filter_name = st.sidebar.selectbox("🎨 Filtro / Estilo visual", list(FILTERS.keys()))
-custom_style = st.sidebar.text_area(
-    "Ou descreva um estilo personalizado",
-    placeholder="Ex.: estilo aquarela medieval com tons pastéis...",
-    help="Se preenchido, substitui o filtro selecionado acima.",
-)
 creativity = st.sidebar.slider(
     "🎲 Nível de variação (criatividade)",
     0.0, 1.0, 0.7, 0.05,
@@ -284,6 +285,29 @@ with tab_upload:
 # ---------------------------------------------------------------------------
 
 st.markdown("---")
+st.subheader("🎨 Escolha o filtro / estilo visual")
+
+filter_label = st.selectbox(
+    "Filtro pré-definido",
+    filter_options(),
+    label_visibility="collapsed",
+)
+filter_name = strip_emoji(filter_label)
+
+emoji, resumo = FILTER_UI.get(filter_name, ("🎨", ""))
+st.caption(f"**{emoji} {filter_name}** — {resumo}")
+with st.expander("🔍 Ver a descrição completa que será enviada à IA"):
+    st.write(FILTERS[filter_name])
+
+with st.expander("🖌️ Ou descreva um estilo personalizado (substitui o filtro acima)"):
+    custom_style = st.text_area(
+        "Estilo personalizado",
+        placeholder="Ex.: estilo aquarela medieval com tons pastéis e detalhes em ouro...",
+        label_visibility="collapsed",
+    )
+if custom_style.strip():
+    st.info(f"🖌️ Usando estilo personalizado: _{custom_style.strip()}_")
+
 extra = st.text_input(
     "✏️ Instruções extras para a IA (opcional)",
     placeholder="Ex.: adicione uma capa esvoaçante, deixe a armadura dourada...",

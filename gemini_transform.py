@@ -69,7 +69,71 @@ FILTERS: dict[str, str] = {
         "texturas de papel, cores translucidas em camadas, contorno fino a "
         "nanquim, estilo de ilustracao de livro de fantasia"
     ),
+    "Pixel Art Retrô 16-bit": (
+        "pixel art retro autentica de console 16-bit (era SNES/Mega Drive): "
+        "paleta reduzida e limitada, pixels grandes e visiveis, sombreamento "
+        "em poucos tons chapados, contorno escuro definido, sem anti-aliasing, "
+        "estetica de JRPG classico dos anos 90"
+    ),
+    "Realismo Pintado": (
+        "ilustracao realista pintada a oleo digital: materiais com textura "
+        "convincente (metal escovado, couro trabalhado, tecido com dobras "
+        "reais), volumetria e iluminacao coerente, pinceladas visiveis, "
+        "acabamento de arte conceitual de RPG premium"
+    ),
+    "Chibi Kawaii": (
+        "estilo chibi fofo japones: proporcoes exageradas com cabeca grande e "
+        "corpo pequeno, tracos arredondados e macios, cores pastel vibrantes, "
+        "olhos grandes e expressivos, visual adoravel de mascote"
+    ),
+    "Elemental Fogo": (
+        "tematica elemental de fogo e magma: armadura incandescente com veios "
+        "de lava brilhante, brasas e fagulhas suspensas, tecidos que parecem "
+        "chama viva, paleta de laranjas, vermelhos e amarelos incandescentes "
+        "sobre metal escurecido pelo calor"
+    ),
+    "Elemental Gelo": (
+        "tematica elemental de gelo: armadura cristalina translucida com "
+        "arestas de gelo, mantos brancos com detalhes prateados, cristais "
+        "geometricos e vapor frio, paleta de ciano, branco e azul profundo "
+        "com brilho glacial"
+    ),
+    "Sacro / Divino": (
+        "estetica sacra e divina: armadura dourada polida com gravacoes "
+        "sagradas, panos brancos imaculados, halos e ornamentos angelicais, "
+        "luz radiante suave, paleta de dourado, marfim e azul celeste"
+    ),
 }
+
+# Emoji + explicacao curta para a interface (ordem de exibicao no seletor).
+FILTER_UI: dict[str, tuple[str, str]] = {
+    "Dark Fantasy": ("🌑", "Sombrio e pesado — armaduras negras, paleta dessaturada, ar de RPG brutal."),
+    "Sci-Fi / Cyberpunk": ("🤖", "Futurista — placas sintéticas, neon ciano/magenta e circuitos à vista."),
+    "Cel Shading": ("🎬", "Anime moderno — contornos limpos e cores chapadas de animação."),
+    "Pixel Art HD": ("🧩", "Pixel art refinada — mais detalhe e paleta rica, estilo indie premiado."),
+    "Pixel Art Retrô 16-bit": ("🕹️", "Nostálgico — pixels grandes e paleta limitada de SNES/Mega Drive."),
+    "Gothic": ("🕯️", "Gótico vitoriano — rendas, prata envelhecida e melancolia."),
+    "Steampunk": ("⚙️", "Engrenagens de latão, vapor, couro e óculos de aviador."),
+    "Aquarela": ("🎨", "Pintura suave — tinta que sangra no papel, ar de livro ilustrado."),
+    "Realismo Pintado": ("🖼️", "Arte conceitual — materiais realistas e pinceladas visíveis."),
+    "Chibi Kawaii": ("🧸", "Fofo — cabeça grande, traços redondos e cores pastel."),
+    "Elemental Fogo": ("🔥", "Incandescente — veios de lava, brasas e metal aquecido."),
+    "Elemental Gelo": ("❄️", "Glacial — cristais translúcidos, prata e azul profundo."),
+    "Sacro / Divino": ("✨", "Divino — ouro polido, panos brancos e luz radiante."),
+}
+
+
+def filter_options() -> list[str]:
+    """Nomes dos filtros na ordem de exibicao, prefixados com emoji."""
+    return [f"{FILTER_UI.get(name, ('🎨',''))[0]} {name}" for name in FILTER_UI if name in FILTERS]
+
+
+def strip_emoji(label: str) -> str:
+    """Converte o rotulo exibido ('🌑 Dark Fantasy') no nome real do filtro."""
+    for name in FILTERS:
+        if label.endswith(name):
+            return name
+    return label
 
 PROMPT_TEMPLATE = (
     "A partir do sprite de personagem 2D fornecido na imagem, gere um NOVO "
