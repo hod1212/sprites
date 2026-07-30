@@ -226,9 +226,27 @@ divergir de si mesma — é a forma mais confiável de manter a consistência.
 
 1. Faça a Etapa 1 e gere o personagem (ou pule direto para a Etapa 2 e envie um
    sprite pronto).
-2. Na Etapa 2, escolha o **movimento**: ataque, defesa, avanço rápido,
-   caminhada, parado (idle), conjurar magia, recebendo dano ou queda/morte — ou
-   descreva um movimento próprio.
+2. Na Etapa 2, escolha um dos **16 movimentos clássicos de jogos 2D** — ou
+   descreva um movimento próprio:
+
+   | Locomoção | Combate | Reação |
+   | --- | --- | --- |
+   | 🧍 Parado (idle) | ⚔️ Ataque de corte (arma branca) | 💥 Recebendo dano |
+   | 🚶 Andar | 🗡️ Estocada (lança/adaga) | ☠️ Queda / morte |
+   | 🏃 Correr | 👊 Ataque desarmado (soco/chute) | 🏆 Vitória / comemoração |
+   | 🦘 Pular | 🔫 Tiro (arma de fogo) | |
+   | 💨 Investida / dash | 🏹 Disparo de arco | |
+   | 🤸 Esquiva / rolamento | ✨ Conjurar magia | |
+   | | 🛡️ Defesa / bloqueio | |
+
+   **Escolha o ataque compatível com a arma do personagem** — um soldado com
+   rifle usa "Tiro (arma de fogo)", um cavaleiro com espada usa "Ataque de
+   corte". Cada movimento tem uma coreografia profissional quadro a quadro
+   (visível no app), e o número de quadros recomendado é sugerido
+   automaticamente. Duas regras extras seguram o movimento no lugar: os
+   quadros são tratados como fotogramas consecutivos de um único movimento
+   fluido, e a ação é sempre executada com a arma que o personagem já possui
+   (nunca trocada).
 3. Escolha a quantidade de quadros (2 a 8) e o método:
    - **🧷 Tira única** — 1 chamada à API, mais consistente (**recomendado**);
    - **🔢 Quadro a quadro** — N chamadas, mais controle sobre cada pose, útil

@@ -205,6 +205,12 @@ def generate_action_sheet(
         f"{n_frames} animation frames of this same 2D game character "
         f"performing: {acao}. Poses left to right: {poses_texto}. "
         f"{_FIDELITY_EN} "
+        "Motion rules: the frames are CONSECUTIVE, evenly-spaced moments of "
+        "ONE continuous motion, in exact temporal order — small, progressive "
+        "changes between neighboring frames, like film frames. Perform the "
+        "action with the weapon the character already holds, adapting the "
+        "grip naturally; if a pose mentions an item the character lacks, "
+        "adapt the gesture to what they actually carry. "
         "Layout: frames side by side in a single row, equal spacing and equal "
         "scale, feet at the same height in every frame, separated by empty "
         "white space; no borders, no numbers, no text; pure white background "
@@ -246,9 +252,12 @@ def generate_action_frames(
         prompt = (
             "Repose this exact 2D game character — do not redesign it. New "
             f"pose: {pose}. Movement context: {acao} (frame {i + 1} of "
-            f"{n_frames}). {_FIDELITY_EN} Keep the same scale, framing and "
-            "feet height as the reference; pure white background (#FFFFFF), "
-            "no shadows, no scenery, no text."
+            f"{n_frames} — this exact moment of the motion, consistent with "
+            f"the previous and next frames). {_FIDELITY_EN} Perform the "
+            "gesture with the weapon the character already holds, adapting "
+            "the grip naturally. Keep the same scale, framing and feet "
+            "height as the reference; pure white background (#FFFFFF), no "
+            "shadows, no scenery, no text."
             f"{extra}"
         )
         try:

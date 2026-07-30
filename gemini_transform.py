@@ -299,95 +299,248 @@ PROMPT_TEMPLATE = (
 # imagem de referencia, nunca do texto.
 
 ACTIONS: dict[str, dict] = {
-    "Ataque com arma": {
-        "emoji": "⚔️",
-        "resumo": "Golpe descendente com a arma em mãos.",
-        "poses": [
-            "de guarda, arma recuada ao lado do corpo, joelhos levemente flexionados",
-            "arma erguida acima da cabeca, tronco girado para tras acumulando forca",
-            "inicio do golpe descendente, braco se esticando para frente",
-            "momento do impacto, arma a frente na altura do alvo, corpo projetado para frente",
-            "arma completando o arco para baixo, corpo inclinado a frente",
-            "retornando a posicao de guarda inicial",
-        ],
-    },
-    "Defesa / bloqueio": {
-        "emoji": "🛡️",
-        "resumo": "Levanta a guarda e absorve o impacto.",
-        "poses": [
-            "em pe, relaxado, guarda baixa",
-            "comecando a erguer o braco e o escudo a frente do corpo",
-            "escudo erguido cobrindo o tronco, corpo agachado atras da protecao",
-            "recebendo o impacto: corpo empurrado para tras, pes firmes, escudo tremendo",
-            "recuperando a postura, escudo ainda erguido",
-        ],
-    },
-    "Avanço rápido / investida": {
-        "emoji": "💨",
-        "resumo": "Arranca para frente em corrida ou investida.",
-        "poses": [
-            "posicao de largada, corpo inclinado a frente, uma perna recuada",
-            "impulso inicial, perna de tras empurrando o chao, tronco bem inclinado",
-            "no ar em pleno avanco, pernas afastadas em passada longa, braços recuados",
-            "aterrissando a frente, perna dianteira absorvendo o impacto",
-            "corrida em velocidade maxima, braços cortando o ar",
-        ],
-    },
-    "Caminhada": {
-        "emoji": "🚶",
-        "resumo": "Ciclo de caminhada lateral, para locomoção no mapa.",
-        "poses": [
-            "passo com a perna direita a frente, braco esquerdo a frente",
-            "pernas se cruzando, corpo no ponto mais alto do ciclo",
-            "passo com a perna esquerda a frente, braco direito a frente",
-            "pernas se cruzando novamente, completando o ciclo",
-        ],
-    },
+    # ---------------- LOCOMOCAO ----------------
     "Parado (idle)": {
         "emoji": "🧍",
-        "resumo": "Respiração leve para o personagem não ficar estático.",
+        "resumo": "Respiração leve em posição de prontidão — o loop básico de qualquer jogo.",
         "poses": [
-            "em pe, postura neutra, peito normal",
-            "peito levemente expandido inspirando, ombros um pouco mais altos",
-            "peito no ponto maximo da inspiracao, cabeca minimamente erguida",
-            "expirando, ombros descendo de volta a postura neutra",
+            "postura de prontidao: pes afastados na largura dos ombros, joelhos levemente "
+            "flexionados, arma segurada em posicao de descanso, ombros relaxados, peito neutro",
+            "inspirando: peito expande sutilmente, ombros sobem 1-2 pixels, cabeca ergue "
+            "minimamente, arma acompanha a leve subida do corpo",
+            "pico da inspiracao: peito no maximo, ombros no ponto mais alto, corpo levemente "
+            "mais alongado que na pose 1",
+            "expirando: ombros e peito descem de volta, corpo retorna exatamente a postura "
+            "da primeira pose para fechar o loop",
+        ],
+    },
+    "Andar": {
+        "emoji": "🚶",
+        "resumo": "Ciclo de caminhada completo, pronto para loop.",
+        "poses": [
+            "contato: perna direita estendida a frente com calcanhar tocando o chao, perna "
+            "esquerda atras com dedos empurrando, braco esquerdo balanca a frente e o direito "
+            "atras (oposicao), tronco ereto",
+            "passagem: pernas se cruzam sob o corpo, joelho esquerdo levantado passando a "
+            "frente, corpo no ponto mais ALTO do ciclo, bracos alinhados ao corpo",
+            "contato espelhado: perna esquerda estendida a frente tocando o chao, perna "
+            "direita atras empurrando, braco direito a frente e esquerdo atras",
+            "passagem espelhada: joelho direito levantado passando a frente, corpo alto "
+            "novamente, fechando o loop de volta a primeira pose",
+        ],
+    },
+    "Correr": {
+        "emoji": "🏃",
+        "resumo": "Corrida com tronco inclinado e passada larga.",
+        "poses": [
+            "impulso: tronco inclinado ~20 graus a frente, perna direita empurrando o chao "
+            "atras, joelho esquerdo erguendo a frente, bracos flexionados 90 graus em oposicao",
+            "suspensao: AMBOS os pes fora do chao, passada larga no ar, perna esquerda "
+            "estendida a frente e direita dobrada atras, bracos em oposicao maxima",
+            "aterrissagem: pe esquerdo toca o chao sob o corpo, joelho absorvendo, perna "
+            "direita vindo por tras, tronco ainda inclinado",
+            "impulso espelhado: perna esquerda empurra atras, joelho direito erguendo a "
+            "frente, bracos trocados",
+            "suspensao espelhada: ambos os pes no ar, perna direita estendida a frente e "
+            "esquerda dobrada atras",
+            "aterrissagem espelhada: pe direito toca o chao sob o corpo, fechando o loop",
+        ],
+    },
+    "Pular": {
+        "emoji": "🦘",
+        "resumo": "Salto vertical completo: impulso, subida, ápice e aterrissagem.",
+        "poses": [
+            "antecipacao: agachado profundo, joelhos bem dobrados, tronco inclinado a frente, "
+            "bracos recuados atras do corpo prontos para lancar",
+            "lancamento: pernas estendendo com forca, corpo esticando para cima, bracos "
+            "lancados para o alto, dedos dos pes deixando o chao",
+            "apice: corpo totalmente no ar, pernas levemente dobradas sob o corpo, bracos "
+            "acima da cabeca, ponto mais alto do salto",
+            "queda: corpo descendo, pernas estendendo em direcao ao chao, bracos abaixando "
+            "para equilibrar",
+            "aterrissagem: pes tocando o chao, joelhos dobrando fundo para absorver o "
+            "impacto, tronco inclinado a frente, bracos a frente equilibrando",
+        ],
+    },
+    "Investida / dash": {
+        "emoji": "💨",
+        "resumo": "Arranque explosivo para frente, com linhas de velocidade.",
+        "poses": [
+            "preparacao: corpo abaixado em posicao de largada, uma perna recuada, tronco "
+            "inclinado a frente, punhos fechados",
+            "explosao: perna de tras empurra com forca total, corpo disparando a frente "
+            "quase horizontal, bracos cortando o ar",
+            "velocidade maxima: corpo lancado a frente em passada longa no ar, cabelo e "
+            "roupas esvoacando para tras, leves linhas de velocidade atras do personagem",
+            "chegada: perna dianteira crava no chao freando, corpo ainda inclinado pela "
+            "inercia, poeira leve nos pes",
+            "recuperacao: corpo se erguendo de volta a postura de prontidao",
+        ],
+    },
+    "Esquiva / rolamento": {
+        "emoji": "🤸",
+        "resumo": "Rolamento defensivo no chão, saindo em posição de guarda.",
+        "poses": [
+            "reacao: corpo abaixando rapido, joelhos dobrando, tronco encolhendo, bracos "
+            "recolhendo junto ao peito",
+            "entrada no rolamento: corpo mergulhando a frente, cabeca escondida, costas "
+            "curvadas formando uma bola",
+            "meio do rolamento: corpo totalmente enrolado em bola rolando no chao, pernas "
+            "recolhidas sobre o corpo",
+            "saida do rolamento: pes voltando a tocar o chao, corpo desenrolando, tronco "
+            "se erguendo",
+            "guarda: agachado em posicao de prontidao, arma de volta a posicao de defesa, "
+            "pronto para agir",
+        ],
+    },
+    # ---------------- COMBATE ----------------
+    "Ataque de corte (arma branca)": {
+        "emoji": "⚔️",
+        "resumo": "Golpe de espada/machado em arco — só para armas de corte.",
+        "poses": [
+            "guarda: pes afastados, joelhos flexionados, arma branca segurada firme na "
+            "diagonal a frente do corpo",
+            "preparacao: arma erguida acima e atras do ombro, tronco girado para tras "
+            "acumulando torque, peso na perna de tras",
+            "inicio do corte: arma iniciando o arco descendente, tronco comecando a girar "
+            "para frente, peso transferindo para a perna da frente",
+            "impacto: arma cruzando a frente do corpo na diagonal, braco totalmente "
+            "estendido, tronco girado para frente, leve rastro do movimento da lamina",
+            "acompanhamento: arma completando o arco do lado oposto do corpo, tronco "
+            "totalmente girado, peso na perna da frente",
+            "recuperacao: arma voltando a posicao de guarda inicial",
+        ],
+    },
+    "Estocada (lança/adaga)": {
+        "emoji": "🗡️",
+        "resumo": "Golpe perfurante em linha reta — lança, rapieira ou adaga.",
+        "poses": [
+            "guarda: corpo de perfil, arma apontada a frente na altura do peito, perna "
+            "dianteira leve, peso na perna de tras",
+            "recuo: arma puxada para tras junto ao corpo, cotovelo dobrado, corpo "
+            "comprimindo como uma mola, peso todo na perna de tras",
+            "avanco: perna dianteira dando um passo largo a frente, arma disparando em "
+            "linha reta, braco estendendo",
+            "extensao maxima: braco e arma totalmente estendidos a frente na horizontal, "
+            "corpo alongado em linha, perna de tras esticada",
+            "retorno: arma recolhendo, corpo voltando a posicao de guarda",
+        ],
+    },
+    "Ataque desarmado (soco/chute)": {
+        "emoji": "👊",
+        "resumo": "Combo corpo a corpo sem arma.",
+        "poses": [
+            "guarda de luta: punhos erguidos na altura do rosto, joelhos flexionados, "
+            "corpo levemente de perfil",
+            "preparacao: quadril e ombro girando para tras, punho direito recuado junto "
+            "a cintura",
+            "soco: punho direito disparado a frente com o braco estendido, quadril girado "
+            "para frente, peso na perna dianteira",
+            "acompanhamento: braco recolhendo enquanto o corpo gira, joelho esquerdo "
+            "comecando a subir para o chute",
+            "chute: perna esquerda estendida em chute frontal na altura do tronco, bracos "
+            "equilibrando, tronco levemente recuado",
+        ],
+    },
+    "Tiro (arma de fogo)": {
+        "emoji": "🔫",
+        "resumo": "Mirar e atirar com pistola ou rifle, com recuo realista.",
+        "poses": [
+            "pronto-baixo: arma de fogo segurada com as duas maos apontada para o chao a "
+            "frente, pes afastados, joelhos levemente flexionados",
+            "mirando: arma erguida na linha dos olhos, coronha firme no ombro (ou bracos "
+            "estendidos se for pistola), bochecha proxima da arma, corpo levemente de perfil",
+            "disparo: clarao de tiro na boca do cano, arma empurrada para tras pelo recuo, "
+            "ombros absorvendo, leve fumaca",
+            "recuperacao do recuo: arma voltando a linha de mira, corpo reassentando, "
+            "fumaca se dissipando",
+            "pronto-baixo final: arma abaixada de volta a posicao inicial de prontidao",
+        ],
+    },
+    "Disparo de arco": {
+        "emoji": "🏹",
+        "resumo": "Sacar, tensionar e soltar a flecha.",
+        "poses": [
+            "prontidao: arco segurado abaixado, flecha ja encaixada na corda, corpo de "
+            "perfil para o alvo",
+            "erguendo: arco subindo para a linha dos olhos, braco do arco estendendo, mao "
+            "da corda comecando a puxar",
+            "tensao maxima: corda puxada ate a bochecha, cotovelo alto atras, arco "
+            "totalmente flexionado, corpo firme ancorado",
+            "disparo: corda solta vibrando, flecha saindo em linha reta, mao da corda "
+            "aberta atras da cabeca, arco inclinando levemente a frente",
+            "descanso: arco abaixando de volta, corpo relaxando a tensao",
         ],
     },
     "Conjurar magia": {
         "emoji": "✨",
-        "resumo": "Canaliza e lança um feitiço.",
+        "resumo": "Canalizar energia e lançar o feitiço.",
         "poses": [
-            "em pe, começando a erguer as maos, olhar concentrado",
-            "maos erguidas a frente do peito, energia se formando entre elas",
-            "energia concentrada e brilhante, corpo tensionado, cabelo e vestes agitados",
-            "liberando o feitico: bracos esticados a frente, corpo projetado",
-            "apos o disparo, bracos ainda estendidos, corpo relaxando",
+            "concentracao: maos comecando a se erguer a frente do peito, olhar fixo, pes "
+            "firmes no chao",
+            "canalizacao: maos em concha a frente do peito com uma pequena esfera de "
+            "energia brilhando entre elas, cabelo e vestes comecando a flutuar",
+            "carga maxima: esfera de energia grande e intensa, bracos tremendo de tensao, "
+            "cabelo e vestes flutuando com forca, leve brilho iluminando o personagem",
+            "lancamento: bracos estendidos com forca a frente, energia disparada, corpo "
+            "projetado a frente, vestes chicoteando para tras",
+            "exaustao: bracos abaixando lentamente, ultimas particulas de energia se "
+            "dissipando, postura relaxando",
         ],
     },
+    "Defesa / bloqueio": {
+        "emoji": "🛡️",
+        "resumo": "Levantar a guarda e aguentar o impacto.",
+        "poses": [
+            "alerta: corpo em prontidao, escudo (ou arma em posicao defensiva cruzada a "
+            "frente) comecando a subir",
+            "guarda fechada: escudo ou arma cobrindo o tronco e o rosto, corpo agachado "
+            "atras da protecao, pes bem plantados",
+            "impacto: corpo empurrado alguns pixels para tras, joelhos dobrando fundo, "
+            "escudo/arma tremendo com pequenas faiscas do golpe, pes arrastando",
+            "resistindo: corpo firmando de volta a posicao, empurrando contra a pressao",
+            "recuperacao: guarda abrindo, corpo voltando a prontidao",
+        ],
+    },
+    # ---------------- REACAO ----------------
     "Recebendo dano": {
         "emoji": "💥",
-        "resumo": "Reação a um golpe recebido.",
+        "resumo": "Reação ao golpe sofrido, com recuo.",
         "poses": [
-            "em pe, postura normal",
-            "cabeca e tronco jogados para tras pelo impacto, bracos abertos",
-            "cambaleando para tras, um pe recuando para nao cair",
-            "recuperando o equilibrio, voltando a postura de guarda",
+            "impacto: cabeca e tronco chicoteados para tras, olhos fechados com forca, "
+            "bracos abertos soltos, arma quase escapando da mao",
+            "recuo: corpo cambaleando um passo para tras, um pe arrastando, tronco ainda "
+            "arqueado",
+            "quase caindo: joelho baixando perto do chao, mao buscando apoio, corpo no "
+            "limite do equilibrio",
+            "recuperacao: corpo se reerguendo com esforco, arma reassumida, voltando a "
+            "guarda com expressao de dor",
         ],
     },
     "Queda / morte": {
         "emoji": "☠️",
-        "resumo": "Personagem é derrotado e cai.",
+        "resumo": "Derrota: o personagem desaba até ficar imóvel.",
         "poses": [
-            "em pe, corpo comecando a ceder, ombros caidos",
-            "joelhos dobrando, tronco inclinando a frente",
-            "caindo de joelhos, bracos pendendo",
-            "corpo tombando de lado em direcao ao chao",
-            "deitado no chao, imovel",
+            "golpe final: corpo arqueado para tras, bracos abertos, arma escapando da mao",
+            "cedendo: joelhos dobrando, tronco despencando a frente, ombros caidos",
+            "de joelhos: caido de joelhos no chao, bracos pendendo sem forca, cabeca baixa",
+            "tombando: corpo desabando de lado em direcao ao chao",
+            "imovel: deitado no chao de lado, olhos fechados, arma caida ao lado",
+        ],
+    },
+    "Vitória / comemoração": {
+        "emoji": "🏆",
+        "resumo": "Celebração após vencer — clássico de fim de batalha.",
+        "poses": [
+            "alivio: postura relaxando apos o combate, ombros baixando, leve sorriso",
+            "impulso de alegria: joelhos dobrando para saltar, bracos recuando",
+            "salto comemorativo: pequeno pulo com o punho (ou a arma) erguido ao alto, "
+            "expressao radiante",
+            "pose de vitoria: aterrissado com o punho ou arma erguida ao ceu, peito "
+            "estufado, postura triunfante",
         ],
     },
 }
-
-
 def action_options() -> list[str]:
     """Nomes das acoes prefixados com emoji, para o seletor da interface."""
     return [f"{dados['emoji']} {nome}" for nome, dados in ACTIONS.items()]
@@ -599,18 +752,29 @@ SHEET_PROMPT_TEMPLATE = (
     "{acao}. "
     "As poses, na ordem da esquerda para a direita, devem ser: {poses}. "
     "{fidelidade} "
+    "REGRAS DE MOVIMENTO: "
+    "(1) MOVIMENTO CONTINUO: os quadros sao instantes CONSECUTIVOS e "
+    "igualmente espacados no tempo de UM UNICO movimento fluido, na ordem "
+    "temporal exata descrita acima. A mudanca entre um quadro e o seguinte "
+    "deve ser pequena e progressiva — como fotogramas de um filme. Nenhum "
+    "quadro pode fugir da sequencia nem repetir outro. "
+    "(2) ARMA DO PERSONAGEM: execute a acao com a arma e o equipamento que o "
+    "personagem JA possui na imagem de referencia, adaptando a empunhadura de "
+    "forma natural. NUNCA troque a arma por outra nem acrescente equipamentos. "
+    "Se a descricao das poses citar um item que o personagem nao tem, adapte o "
+    "gesto ao que ele realmente carrega. "
     "REGRAS DE LAYOUT: "
-    "(1) Os {n_frames} quadros lado a lado em uma unica linha, igualmente "
+    "(3) Os {n_frames} quadros lado a lado em uma unica linha, igualmente "
     "espacados, separados por espaco branco vazio, sem molduras, sem numeros e "
     "sem qualquer texto. "
-    "(2) ALINHAMENTO: todos os quadros na MESMA escala, com o personagem do "
+    "(4) ALINHAMENTO: todos os quadros na MESMA escala, com o personagem do "
     "mesmo tamanho e os pes na MESMA altura em todos eles, para que a animacao "
     "nao trema. "
-    "(3) Em TODOS os {n_frames} quadros o personagem deve ser identico ao da "
+    "(5) Em TODOS os {n_frames} quadros o personagem deve ser identico ao da "
     "referencia — nenhum detalhe de design pode variar de um quadro para o "
     "outro. "
-    "(4) O fundo de toda a imagem deve ser branco solido puro (#FFFFFF). "
-    "(5) Mantenha o mesmo estilo artistico e a mesma perspectiva da referencia. "
+    "(6) O fundo de toda a imagem deve ser branco solido puro (#FFFFFF). "
+    "(7) Mantenha o mesmo estilo artistico e a mesma perspectiva da referencia. "
     "{extra}"
 )
 
@@ -620,13 +784,19 @@ POSE_PROMPT_TEMPLATE = (
     "Sua tarefa e' REPOSICIONAR esse personagem — nao redesenha-lo. Gere um "
     "unico sprite do MESMO personagem, com o design exatamente igual, agora "
     "nesta pose: {pose}. "
-    "Contexto do movimento: {acao} (quadro {i} de {n_frames}). "
+    "Contexto do movimento: {acao} (quadro {i} de {n_frames} — a pose deve "
+    "ser exatamente este instante do movimento, coerente com o quadro "
+    "anterior e o seguinte da sequencia). "
     "{fidelidade} "
     "REGRAS ADICIONAIS: "
-    "(1) Mantenha a MESMA escala, o mesmo enquadramento e a mesma altura dos "
+    "(1) ARMA DO PERSONAGEM: execute o gesto com a arma e o equipamento que o "
+    "personagem JA possui na referencia, adaptando a empunhadura de forma "
+    "natural. Se a descricao da pose citar um item que ele nao tem, adapte o "
+    "gesto ao que ele realmente carrega — nunca troque nem invente equipamento. "
+    "(2) Mantenha a MESMA escala, o mesmo enquadramento e a mesma altura dos "
     "pes da imagem de referencia, para que os quadros se alinhem na animacao. "
-    "(2) Mantenha o mesmo estilo artistico e a mesma perspectiva. "
-    "(3) O fundo deve ser branco solido puro (#FFFFFF), sem sombras "
+    "(3) Mantenha o mesmo estilo artistico e a mesma perspectiva. "
+    "(4) O fundo deve ser branco solido puro (#FFFFFF), sem sombras "
     "projetadas, sem cenario, sem molduras e sem texto. "
     "{extra}"
 )

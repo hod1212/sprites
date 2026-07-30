@@ -536,11 +536,32 @@ else:
 if personagem is not None:
     col_acao, col_qtd = st.columns([2, 1])
     with col_acao:
-        acao_label = st.selectbox("🎭 Movimento / ação", action_options())
+        acao_label = st.selectbox(
+            "🎭 Movimento / ação",
+            action_options(),
+            help="16 padrões clássicos de animação de jogos 2D, organizados em "
+            "locomoção, combate e reação. Escolha o ataque compatível com a "
+            "arma do personagem (corte, estocada, tiro, arco...).",
+        )
         acao_nome = strip_action_emoji(acao_label)
         st.caption(ACTIONS[acao_nome]["resumo"])
+    poses_ideais = len(ACTIONS[acao_nome]["poses"])
     with col_qtd:
-        n_quadros = st.slider("Quadros", 2, 8, 4, help="Mais quadros = animação mais fluida.")
+        n_quadros = st.slider(
+            "Quadros", 2, 8, poses_ideais,
+            help="A coreografia completa deste movimento tem "
+            f"{poses_ideais} poses — esse é o valor recomendado. Menos quadros "
+            "= o app escolhe os instantes-chave; mais = repete o final.",
+        )
+    if n_quadros != poses_ideais:
+        st.caption(
+            f"💡 A coreografia de **{acao_nome}** foi desenhada com "
+            f"**{poses_ideais} quadros** — use esse valor para o movimento completo."
+        )
+
+    with st.expander("🎞️ Ver a coreografia quadro a quadro deste movimento"):
+        for pi, pose_txt in enumerate(ACTIONS[acao_nome]["poses"], 1):
+            st.markdown(f"**{pi}.** {pose_txt}")
 
     with st.expander("🎯 Ou descreva um movimento próprio"):
         acao_custom = st.text_area(
