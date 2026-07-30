@@ -66,6 +66,27 @@ def image_to_png_bytes(img: Image.Image) -> bytes:
 
 st.sidebar.title("⚙️ Configurações")
 
+# IMPORTANTE: o Streamlit apaga o valor de um campo assim que ele deixa de ser
+# exibido na tela. Como o campo da chave fica oculto depois de preenchido, a
+# chave era perdida no clique seguinte. A solucao e' copiar o valor digitado
+# para esta entrada propria de sessao, que o Streamlit nunca descarta.
+KEY_STORE = "gemini_api_key_persistente"
+KEY_WIDGETS = ("api_key_sidebar", "api_key_main")
+
+if st.session_state.pop("_esquecer_chave", False):
+    st.session_state[KEY_STORE] = ""
+    for widget_key in KEY_WIDGETS:
+        st.session_state.pop(widget_key, None)
+
+st.session_state.setdefault(KEY_STORE, "")
+
+
+def remember_api_key(widget_key: str) -> None:
+    """Copia o que foi digitado num campo para a memoria persistente."""
+    value = (st.session_state.get(widget_key) or "").strip()
+    if value:
+        st.session_state[KEY_STORE] = value
+
 
 def detect_stored_key() -> str:
     """
@@ -99,12 +120,12 @@ st.sidebar.text_input(
     help="Cole aqui a sua chave. Crie uma grátis em "
     "https://aistudio.google.com/apikey",
     key="api_key_sidebar",
+    on_change=remember_api_key,
+    args=("api_key_sidebar",),
 )
+remember_api_key("api_key_sidebar")
 
-typed_key = (
-    st.session_state.get("api_key_sidebar", "").strip()
-    or st.session_state.get("api_key_main", "").strip()
-)
+typed_key = st.session_state[KEY_STORE]
 api_key = typed_key or stored_key
 
 if api_key:
@@ -146,23 +167,39 @@ st.caption(
 )
 
 # No celular a barra lateral fica escondida atras do menu ☰, por isso o campo
-# da chave tambem aparece aqui — visivel de imediato — quando falta configurar.
-if not api_key:
+# da chave tambem aparece aqui. Ele e' SEMPRE renderizado (apenas recolhido
+# quando ja existe chave): se deixasse de aparecer, o Streamlit descartaria o
+# valor digitado no clique seguinte.
+def campo_da_chave() -> None:
+    st.text_input(
+        "Chave da API Gemini",
+        type="password",
+        key="api_key_main",
+        placeholder="AIzaSy...",
+        label_visibility="collapsed",
+        on_change=remember_api_key,
+        args=("api_key_main",),
+    )
+    st.caption(
+        "Crie uma chave grátis em **https://aistudio.google.com/apikey** "
+        "(login com conta Google → *Create API key*). A chave fica apenas "
+        "nesta sessão do navegador e não é salva em nenhum lugar."
+    )
+
+
+if api_key:
+    with st.expander("🔑 Chave da API configurada ✅ — toque para alterar", expanded=False):
+        campo_da_chave()
+        if st.button("🗑️ Esquecer a chave desta sessão"):
+            st.session_state["_esquecer_chave"] = True
+            st.rerun()
+else:
     with st.container(border=True):
         st.markdown("#### 🔑 Primeiro, cole a sua chave da API do Gemini")
-        st.text_input(
-            "Chave da API Gemini",
-            type="password",
-            key="api_key_main",
-            placeholder="AIzaSy...",
-            label_visibility="collapsed",
-        )
-        st.caption(
-            "Crie uma chave grátis em **https://aistudio.google.com/apikey** "
-            "(login com conta Google → *Create API key*). A chave fica apenas "
-            "nesta sessão do navegador e não é salva em nenhum lugar."
-        )
-    api_key = st.session_state.get("api_key_main", "").strip()
+        campo_da_chave()
+
+remember_api_key("api_key_main")
+api_key = st.session_state[KEY_STORE] or stored_key
 
 tab_search, tab_upload = st.tabs(["🔎 Buscar no Spriters Resource", "📁 Enviar meu próprio sprite"])
 

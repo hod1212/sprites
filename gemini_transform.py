@@ -237,6 +237,22 @@ def transform_sprite(
                 "seguranca). Tente outro filtro ou outro quadro do sprite."
             )
         except Exception as exc:  # erros de rede/quota -> retry com backoff
+            # Chave invalida ou sem permissao nao melhora com nova tentativa:
+            # avisa na hora, em vez de insistir por quase um minuto.
+            texto = str(exc).upper()
+            if any(
+                marca in texto
+                for marca in (
+                    "API_KEY_INVALID", "API KEY NOT VALID", "PERMISSION_DENIED",
+                    "UNAUTHENTICATED", "401", "403",
+                )
+            ):
+                raise RuntimeError(
+                    "A chave da API foi recusada pelo Google. Confira se voce "
+                    "copiou a chave inteira de https://aistudio.google.com/apikey "
+                    "e se o faturamento/cota da conta esta ativo. "
+                    f"(resposta do servidor: {exc})"
+                ) from exc
             last_error = exc
         time.sleep(2 ** attempt)
 
