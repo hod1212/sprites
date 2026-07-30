@@ -2,7 +2,7 @@
 # RO Sprite Forge - Instalador para Mac
 # Clique duas vezes neste arquivo para instalar (1a vez) e abrir o app.
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 echo "======================================================"
 echo "  RO SPRITE FORGE - Instalador para Mac"
@@ -33,28 +33,73 @@ if ! command -v python3 &> /dev/null; then
     echo "     de novo neste mesmo arquivo (instalar_e_abrir_MAC.command)."
     echo ""
     open "https://www.python.org/downloads/"
-    read -p "Pressione ENTER para fechar..."
+    echo "======================================================"
+    echo "  Pressione ENTER para FECHAR esta janela."
+    echo "======================================================"
+    read -p ""
     exit 1
 fi
 
+echo ""
+echo "Python encontrado. Continuando..."
+echo ""
+
 # --- 2. Cria o ambiente isolado (so' na primeira vez) -------------------
 if [ ! -d ".venv" ]; then
-    echo ""
     echo "[1/3] Preparando o ambiente do aplicativo pela primeira vez..."
-    python3 -m venv .venv
+    echo "      (isso demora 1-2 minutos)"
+    if ! python3 -m venv .venv; then
+        echo ""
+        echo "======================================================"
+        echo "  ERRO ao criar o ambiente do aplicativo."
+        echo "======================================================"
+        echo ""
+        echo "Tente reinstalar o Python em https://www.python.org/downloads/"
+        echo "e rode este arquivo novamente."
+        echo ""
+        read -p "Pressione ENTER para FECHAR esta janela..."
+        exit 1
+    fi
+fi
+
+if [ ! -f ".venv/bin/activate" ]; then
+    echo ""
+    echo "======================================================"
+    echo "  ERRO: a pasta .venv existe mas parece incompleta."
+    echo "======================================================"
+    echo ""
+    echo "Apague a pasta '.venv' que esta ao lado deste arquivo e"
+    echo "clique de novo neste instalador para recriar do zero."
+    echo ""
+    read -p "Pressione ENTER para FECHAR esta janela..."
+    exit 1
 fi
 
 source .venv/bin/activate
 
 # --- 3. Instala as dependencias (so' demora na primeira vez) ------------
 echo ""
-echo "[2/3] Verificando componentes necessarios..."
-python3 -m pip install --quiet --upgrade pip
-python3 -m pip install --quiet -r requirements.txt
+echo "[2/3] Instalando componentes necessarios..."
+echo "      (pode demorar varios minutos na primeira vez - normal)"
+echo ""
+python3 -m pip install --upgrade pip > /dev/null
+if ! python3 -m pip install -r requirements.txt; then
+    echo ""
+    echo "======================================================"
+    echo "  ERRO ao instalar os componentes do aplicativo."
+    echo "======================================================"
+    echo ""
+    echo "Verifique sua conexao com a internet e tente novamente"
+    echo "clicando de novo neste arquivo."
+    echo ""
+    read -p "Pressione ENTER para FECHAR esta janela..."
+    exit 1
+fi
 
 # Instala o navegador do scraper apenas se ainda nao existir
 if [ ! -d "$HOME/Library/Caches/ms-playwright" ]; then
-    echo "Instalando o navegador auxiliar (1a vez apenas)..."
+    echo ""
+    echo "Instalando o navegador auxiliar de busca (1a vez apenas)..."
     python3 -m playwright install chromium
 fi
 
@@ -69,3 +114,7 @@ echo "======================================================"
 echo ""
 
 streamlit run app.py
+
+echo ""
+echo "O aplicativo foi encerrado."
+read -p "Pressione ENTER para fechar..."
