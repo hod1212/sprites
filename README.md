@@ -148,10 +148,16 @@ O repositório já vem preparado para o [Streamlit Community Cloud](https://shar
 
 Observações importantes:
 
-- **Não** salve sua chave do Gemini no código: como o app fica público, cole a
-  chave na **barra lateral** a cada uso, ou restrinja em *Settings → Secrets*
-  do Streamlit Cloud adicionando `GEMINI_API_KEY = "sua-chave"` (aí qualquer
-  pessoa com a URL gasta a sua cota — prefira a barra lateral).
+- **A chave da API precisa ser informada no app.** O arquivo `.env` não vai
+  para o GitHub (está no `.gitignore`, por segurança), então na nuvem existem
+  duas formas:
+  - **Recomendado:** cole a chave no campo que aparece no topo da página (ou
+    no menu **☰ → Configurações**). Ela vale só para a sua sessão do navegador
+    e não é salva em lugar nenhum.
+  - **Alternativa (só se o app for privado/seu):** no painel do Streamlit
+    Cloud, vá em **Settings → Secrets** e adicione a linha
+    `GEMINI_API_KEY = "sua-chave-aqui"`. ⚠️ Atenção: com o app público,
+    qualquer pessoa com a URL passa a gastar a sua cota.
 - A busca automática no Spriters Resource pode falhar na nuvem, pois o
   Cloudflare costuma bloquear IPs de datacenter mesmo com navegador real.
   Nesse caso use a aba **"Enviar meu próprio sprite"** — baixe o PNG pelo

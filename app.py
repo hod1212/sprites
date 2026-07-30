@@ -59,12 +59,52 @@ def image_to_png_bytes(img: Image.Image) -> bytes:
 
 st.sidebar.title("⚙️ Configurações")
 
-api_key = st.sidebar.text_input(
+
+def detect_stored_key() -> str:
+    """
+    Procura a chave da API nas fontes automaticas, em ordem:
+      1. st.secrets  -> usado no Streamlit Community Cloud
+      2. variaveis de ambiente / arquivo .env -> usado na execucao local
+    """
+    try:
+        for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+            if name in st.secrets:
+                value = str(st.secrets[name]).strip()
+                if value and not value.startswith("cole-sua-chave"):
+                    return value
+    except Exception:
+        pass  # nenhum secrets.toml configurado (normal na execucao local)
+
+    import os
+
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        value = (os.getenv(name) or "").strip()
+        if value and not value.startswith("cole-sua-chave"):
+            return value
+    return ""
+
+
+stored_key = detect_stored_key()
+
+st.sidebar.text_input(
     "Chave da API Gemini",
     type="password",
-    help="Deixe em branco para usar a variável GEMINI_API_KEY do arquivo .env. "
-    "Crie uma chave grátis em https://aistudio.google.com/apikey",
+    help="Cole aqui a sua chave. Crie uma grátis em "
+    "https://aistudio.google.com/apikey",
+    key="api_key_sidebar",
 )
+
+typed_key = (
+    st.session_state.get("api_key_sidebar", "").strip()
+    or st.session_state.get("api_key_main", "").strip()
+)
+api_key = typed_key or stored_key
+
+if api_key:
+    origem = "digitada" if typed_key else "configurada no servidor"
+    st.sidebar.success(f"🔑 Chave {origem} — pronto para gerar!")
+else:
+    st.sidebar.warning("🔑 Nenhuma chave da API configurada.")
 
 filter_name = st.sidebar.selectbox("🎨 Filtro / Estilo visual", list(FILTERS.keys()))
 custom_style = st.sidebar.text_area(
@@ -103,6 +143,25 @@ st.caption(
     "Busca sprites de Ragnarok Online no Spriters Resource e os reimagina "
     "com o Gemini (Image-to-Image), mantendo pose e silhueta."
 )
+
+# No celular a barra lateral fica escondida atras do menu ☰, por isso o campo
+# da chave tambem aparece aqui — visivel de imediato — quando falta configurar.
+if not api_key:
+    with st.container(border=True):
+        st.markdown("#### 🔑 Primeiro, cole a sua chave da API do Gemini")
+        st.text_input(
+            "Chave da API Gemini",
+            type="password",
+            key="api_key_main",
+            placeholder="AIzaSy...",
+            label_visibility="collapsed",
+        )
+        st.caption(
+            "Crie uma chave grátis em **https://aistudio.google.com/apikey** "
+            "(login com conta Google → *Create API key*). A chave fica apenas "
+            "nesta sessão do navegador e não é salva em nenhum lugar."
+        )
+    api_key = st.session_state.get("api_key_main", "").strip()
 
 tab_search, tab_upload = st.tabs(["🔎 Buscar no Spriters Resource", "📁 Enviar meu próprio sprite"])
 
@@ -233,7 +292,17 @@ extra = st.text_input(
 if base_sprite is None:
     st.info("👆 Busque um sprite ou envie um arquivo para habilitar a transformação.")
 else:
-    if st.button("✨ Transformar sprite com Gemini", type="primary", use_container_width=True):
+    if not api_key:
+        st.warning(
+            "🔑 Cole a sua chave da API do Gemini no campo acima (ou no menu ☰ → "
+            "Configurações) para habilitar a geração."
+        )
+    if st.button(
+        "✨ Transformar sprite com Gemini",
+        type="primary",
+        use_container_width=True,
+        disabled=not api_key,
+    ):
         prepared = sprite_tools.prepare_for_gemini(base_sprite)
         try:
             with st.spinner("O Gemini está reimaginando seu sprite... (~10-30 s)"):
