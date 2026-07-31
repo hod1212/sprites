@@ -1,18 +1,24 @@
+# Os limites superiores (<X.0) evitam que uma atualizacao com mudanca
+# incompatível quebre o app sem aviso — importante porque o instalador roda
+# `pip install -r requirements.txt` a cada execucao. Os limites inferiores
+# garantem correcoes de seguranca ja publicadas (ex.: Pillow 10.3 corrigiu a
+# CVE-2024-28219).
+
 # --- Interface ---
-streamlit>=1.36.0
+streamlit>=1.36.0,<2.0
 
 # --- Web Scraping ---
-requests>=2.32.0
-beautifulsoup4>=4.12.0
-playwright>=1.45.0          # Navegador real (necessario para passar pelo Cloudflare do Spriters Resource)
-cloudscraper>=1.2.71        # Resolve desafios Cloudflare sem navegador (2a tentativa, mais leve)
+requests>=2.32.0,<3.0
+beautifulsoup4>=4.12.0,<5.0
+playwright>=1.45.0,<2.0     # Navegador real (necessario para passar pelo Cloudflare do Spriters Resource)
+cloudscraper>=1.2.71,<2.0   # Resolve desafios Cloudflare sem navegador (2a tentativa, mais leve)
 
 # --- Processamento de Imagem ---
-pillow>=10.3.0
-numpy>=1.26.0
+pillow>=10.3.0,<13.0
+numpy>=1.26.0,<3.0
 
 # --- API Google Gemini (Image-to-Image / "Nano Banana") ---
-google-genai>=1.0.0
+google-genai>=1.0.0,<3.0
 
 # --- Utilidades ---
-python-dotenv>=1.0.0
+python-dotenv>=1.0.0,<2.0

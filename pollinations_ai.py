@@ -56,6 +56,7 @@ from gemini_transform import (
     intensity_info,
     poses_for_action,
 )
+from redact import redact
 
 IMAGE_ENDPOINT = "https://image.pollinations.ai/prompt/"
 UPLOAD_ENDPOINT = "https://tmpfiles.org/api/v1/upload"
@@ -164,13 +165,19 @@ def _generate(
             )
         except requests.RequestException as exc:
             last_error = exc
-        time.sleep(3 * (attempt + 1))
+        # Nao dorme depois da ultima tentativa: so' atrasaria o erro final.
+        if attempt < max_retries - 1:
+            time.sleep(3 * (attempt + 1))
 
+    # IMPORTANTE: a chave vai na querystring, e as excecoes do `requests`
+    # costumam trazer a URL inteira. Sem esta limpeza, a chave do usuario
+    # apareceria na tela do app.
+    detalhe = redact(str(last_error), api_key)
     raise PollinationsError(
         "O Pollinations nao respondeu (servico comunitario — fica "
         "sobrecarregado em horarios de pico, e o modo sem chave tem limite "
         "de 1 requisicao a cada ~15s). Tente novamente em 1-2 minutos, "
-        f"informe uma chave, ou volte ao motor Gemini. Detalhe tecnico: {last_error}"
+        f"informe uma chave, ou volte ao motor Gemini. Detalhe tecnico: {detalhe}"
     )
 
 
@@ -308,7 +315,8 @@ def generate_action_frames(
             image = _generate(prompt, character_image, width=w, height=h, api_key=api_key)
             resultados.append(FrameResult(i, image))
         except Exception as exc:
-            resultados.append(FrameResult(i, None, error=str(exc)))
+            # O erro por quadro tambem e' exibido na interface: limpa segredos.
+            resultados.append(FrameResult(i, None, error=redact(str(exc), api_key)))
     if progress_callback:
         progress_callback(n_frames, n_frames, "Concluido.")
     return resultados

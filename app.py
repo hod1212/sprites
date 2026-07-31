@@ -30,7 +30,6 @@ from __future__ import annotations
 import io
 import traceback
 import zipfile
-from pathlib import Path
 
 import streamlit as st
 from PIL import Image
@@ -38,6 +37,7 @@ from PIL import Image
 import pollinations_ai
 import scraper
 import sprite_tools
+from redact import redact
 from gemini_transform import (
     ACTIONS,
     DEFAULT_INTENSITY,
@@ -56,8 +56,6 @@ from gemini_transform import (
 
 st.set_page_config(page_title="RO Sprite Forge", page_icon="🗡️", layout="wide")
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-
 
 # ---------------------------------------------------------------------------
 # Funcoes auxiliares com cache (evita repetir scraping e downloads)
@@ -73,6 +71,22 @@ def cached_index(force: bool = False):
 def cached_download(entry_dict: dict) -> str:
     entry = scraper.SheetEntry(**entry_dict)
     return str(scraper.download_sheet(entry))
+
+
+def mostrar_erro(titulo: str, exc: Exception) -> None:
+    """
+    Exibe um erro na interface SEM vazar segredos.
+
+    Tanto a mensagem quanto o traceback podem conter a chave da API (o
+    Pollinations a envia na URL), e este app pode estar publicado na nuvem.
+    """
+    segredos = (
+        st.session_state.get(KEY_STORE) or "",
+        st.session_state.get(POLLI_KEY_STORE) or "",
+    )
+    st.error(f"{titulo}: {redact(str(exc), *segredos)}")
+    with st.expander("Detalhes técnicos"):
+        st.code(redact(traceback.format_exc(), *segredos))
 
 
 def image_to_png_bytes(img: Image.Image) -> bytes:
@@ -352,7 +366,7 @@ with tab_search:
             results = scraper.search_sheets(query, [scraper.SheetEntry(**d) for d in index])
         except Exception as exc:
             st.error(
-                f"Não consegui acessar o Spriters Resource: {exc}\n\n"
+                f"Não consegui acessar o Spriters Resource: {redact(str(exc))}\n\n"
                 "💡 O site usa proteção Cloudflare. Verifique se o Playwright está "
                 "instalado (`playwright install chromium`) ou use a aba "
                 "**Enviar meu próprio sprite**."
@@ -381,9 +395,7 @@ with tab_search:
                 base_sprite = selecao.get("base")
                 original_label = selecao.get("label", chosen.name)
             except Exception as exc:
-                st.error(f"Erro ao baixar/processar o sheet: {exc}")
-                with st.expander("Detalhes técnicos"):
-                    st.code(traceback.format_exc())
+                mostrar_erro("Erro ao baixar/processar o sheet", exc)
 
 # --- Aba 2: upload manual (fallback para quando o site bloquear) ------------
 
@@ -393,11 +405,16 @@ with tab_upload:
         type=["png", "gif", "bmp", "webp"],
     )
     if uploaded is not None:
-        img = Image.open(uploaded)
-        clean = sprite_tools.remove_background(img)
-        selecao = seletor_de_sprite(clean, uploaded.name, "upload")
-        base_sprite = selecao.get("base")
-        original_label = selecao.get("label", uploaded.name)
+        try:
+            img, aviso = sprite_tools.load_image_safely(uploaded)
+            if aviso:
+                st.warning(f"⚠️ {aviso}")
+            clean = sprite_tools.remove_background(img)
+            selecao = seletor_de_sprite(clean, uploaded.name, "upload")
+            base_sprite = selecao.get("base")
+            original_label = selecao.get("label", uploaded.name)
+        except sprite_tools.ImagemInvalida as exc:
+            st.error(f"❌ {exc}")
 
 # ---------------------------------------------------------------------------
 # Transformacao com o Gemini
@@ -416,7 +433,7 @@ filter_name = strip_emoji(filter_label)
 emoji, resumo = FILTER_UI.get(filter_name, ("🎨", ""))
 st.caption(f"**{emoji} {filter_name}** — {resumo}")
 with st.expander("🔍 Ver a descrição completa que será enviada à IA"):
-    st.write(FILTERS[filter_name])
+    st.write(FILTERS.get(filter_name, filter_name))
 
 with st.expander("🖌️ Ou descreva um estilo personalizado (substitui o filtro acima)"):
     custom_style = st.text_area(
@@ -456,6 +473,10 @@ with st.expander("📋 Ver a regra exata enviada à IA neste grau"):
 if base_sprite is None:
     st.info("👆 Busque um sprite ou envie um arquivo para habilitar a transformação.")
 else:
+    # As duas abas sao renderizadas juntas pelo Streamlit; se houver busca E
+    # upload ativos, o upload prevalece. Deixar isso explicito evita o usuario
+    # gerar a partir de um sprite diferente do que pensa estar vendo.
+    st.caption(f"🎯 Sprite ativo para a transformação: **{original_label}**")
     if not pode_gerar:
         st.warning(
             "🔑 Cole a sua chave da API do Gemini no campo acima (ou no menu ☰ → "
@@ -500,9 +521,7 @@ else:
         except GeminiNotConfigured as exc:
             st.error(str(exc))
         except Exception as exc:
-            st.error(f"Erro na geração: {exc}")
-            with st.expander("Detalhes técnicos"):
-                st.code(traceback.format_exc())
+            mostrar_erro("Erro na geração", exc)
 
     if "result" in st.session_state and st.session_state.get("result_label") == original_label:
         col_a, col_b = st.columns(2)
@@ -571,9 +590,15 @@ else:
         key="upload_personagem",
     )
     if enviado_anim is not None:
-        personagem = sprite_tools.remove_background(Image.open(enviado_anim))
-        origem_personagem = f"upload:{enviado_anim.name}"
-        st.image(personagem, caption=f"Personagem: {enviado_anim.name}", width=170)
+        try:
+            img_anim, aviso_anim = sprite_tools.load_image_safely(enviado_anim)
+            if aviso_anim:
+                st.warning(f"⚠️ {aviso_anim}")
+            personagem = sprite_tools.remove_background(img_anim)
+            origem_personagem = f"upload:{enviado_anim.name}"
+            st.image(personagem, caption=f"Personagem: {enviado_anim.name}", width=170)
+        except sprite_tools.ImagemInvalida as exc:
+            st.error(f"❌ {exc}")
 
 if personagem is not None:
     col_acao, col_qtd = st.columns([2, 1])
@@ -586,8 +611,11 @@ if personagem is not None:
             "arma do personagem (corte, estocada, tiro, arco...).",
         )
         acao_nome = strip_action_emoji(acao_label)
-        st.caption(ACTIONS[acao_nome]["resumo"])
-    poses_ideais = len(ACTIONS[acao_nome]["poses"])
+        # .get defensivo: se um rotulo deixar de casar com a chave, a tela
+        # continua funcionando em vez de quebrar com KeyError.
+        dados_acao = ACTIONS.get(acao_nome) or next(iter(ACTIONS.values()))
+        st.caption(dados_acao["resumo"])
+    poses_ideais = len(dados_acao["poses"])
     with col_qtd:
         n_quadros = st.slider(
             "Quadros", 2, 8, poses_ideais,
@@ -602,7 +630,7 @@ if personagem is not None:
         )
 
     with st.expander("🎞️ Ver a coreografia quadro a quadro deste movimento"):
-        for pi, pose_txt in enumerate(ACTIONS[acao_nome]["poses"], 1):
+        for pi, pose_txt in enumerate(dados_acao["poses"], 1):
             st.markdown(f"**{pi}.** {pose_txt}")
 
     with st.expander("🎯 Ou descreva um movimento próprio"):
@@ -721,12 +749,24 @@ if personagem is not None:
         except GeminiNotConfigured as exc:
             st.error(str(exc))
         except Exception as exc:
-            st.error(f"Erro ao gerar a animação: {exc}")
-            with st.expander("Detalhes técnicos"):
-                st.code(traceback.format_exc())
+            mostrar_erro("Erro ao gerar a animação", exc)
 
     # ---------------- Resultado da animacao ----------------
+    # A assinatura amarra o resultado ao personagem/acao que o geraram. Sem
+    # esta checagem, trocar de personagem mantinha a animacao antiga na tela
+    # como se pertencesse ao novo.
+    assinatura_atual = f"{origem_personagem}|{acao_nome}|{acao_custom}|{n_quadros}|{metodo}"
+    resultado_e_atual = st.session_state.get("anim_assinatura") == assinatura_atual
     quadros_anim = st.session_state.get("anim_quadros") or []
+
+    if quadros_anim and not resultado_e_atual:
+        st.info(
+            "ℹ️ Você mudou o personagem ou as opções desde a última geração. "
+            "Clique em **Gerar animação** para criar a sequência nova — "
+            "o resultado anterior foi ocultado para não confundir."
+        )
+        quadros_anim = []
+
     if quadros_anim:
         titulo = st.session_state.get("anim_titulo", "animação")
         st.success(f"✅ {len(quadros_anim)} quadros gerados — **{titulo}**")

@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import difflib
 import json
+import os
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -72,6 +74,7 @@ class SpritersClient:
         self._browser = None
         self._context = None
         self._page = None
+        self._cloudscraper = None
 
     # -- requests -----------------------------------------------------------
 
@@ -87,7 +90,7 @@ class SpritersClient:
     def _try_requests_bytes(self, url: str) -> bytes | None:
         try:
             resp = requests.get(url, headers=BROWSER_HEADERS, timeout=60)
-            if resp.status_code == 200 and resp.content[:8].startswith(b"\x89PNG"):
+            if resp.status_code == 200 and _e_imagem(resp.content):
                 return resp.content
         except requests.RequestException:
             pass
@@ -96,7 +99,7 @@ class SpritersClient:
     # -- cloudscraper (resolve desafios Cloudflare sem navegador) -----------
 
     def _get_cloudscraper(self):
-        if getattr(self, "_cloudscraper", None) is None:
+        if self._cloudscraper is None:
             try:
                 import cloudscraper
 
@@ -125,7 +128,7 @@ class SpritersClient:
             return None
         try:
             resp = scraper_session.get(url, timeout=60)
-            if resp.status_code == 200 and resp.content[:8].startswith(b"\x89PNG"):
+            if resp.status_code == 200 and _e_imagem(resp.content):
                 return resp.content
         except Exception:
             pass
@@ -139,10 +142,13 @@ class SpritersClient:
         from playwright.sync_api import sync_playwright
 
         self._playwright = sync_playwright().start()
-        launch_kwargs = dict(
-            headless=self.headless,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
+        # O sandbox do Chromium e' uma camada de defesa real ao abrir um site
+        # externo. So' e' desligado quando o ambiente impede seu uso (rodando
+        # como root em container), nunca na maquina do usuario.
+        args = ["--disable-blink-features=AutomationControlled"]
+        if _precisa_desligar_sandbox():
+            args.append("--no-sandbox")
+        launch_kwargs = dict(headless=self.headless, args=args)
         try:
             self._browser = self._playwright.chromium.launch(**launch_kwargs)
         except Exception:
@@ -213,6 +219,15 @@ class SpritersClient:
         return self._playwright_bytes(url)
 
     def close(self):
+        # A sessao do cloudscraper tambem mantem conexoes abertas.
+        sessao = getattr(self, "_cloudscraper", None)
+        if sessao:
+            try:
+                sessao.close()
+            except Exception:
+                pass
+        self._cloudscraper = None
+
         for obj in (self._context, self._browser):
             try:
                 if obj:
@@ -236,6 +251,53 @@ class SpritersClient:
 # ---------------------------------------------------------------------------
 # Indexacao
 # ---------------------------------------------------------------------------
+
+def _e_imagem(dados: bytes) -> bool:
+    """Reconhece PNG, GIF, JPEG e WEBP pela assinatura dos primeiros bytes."""
+    if not dados or len(dados) < 12:
+        return False
+    return (
+        dados.startswith(b"\x89PNG")
+        or dados[:3] == b"GIF"
+        or dados[:2] == b"\xff\xd8"
+        or (dados[:4] == b"RIFF" and dados[8:12] == b"WEBP")
+    )
+
+
+def _precisa_desligar_sandbox() -> bool:
+    """
+    O sandbox do Chromium nao funciona rodando como root (caso tipico de
+    container/nuvem). Fora disso ele fica LIGADO, preservando o isolamento.
+    """
+    try:
+        return hasattr(os, "geteuid") and os.geteuid() == 0
+    except Exception:
+        return False
+
+
+ALLOWED_HOSTS = {
+    "spriters-resource.com",
+    "www.spriters-resource.com",
+    "cdn.spriters-resource.com",
+}
+
+
+def _url_permitida(url: str) -> bool:
+    """
+    So permite baixar de dominios do Spriters Resource.
+
+    As URLs candidatas sao extraidas do HTML do site, ou seja, sao conteudo de
+    terceiros: sem esta barreira, um link malicioso (ou apenas um anuncio)
+    faria o app requisitar um host arbitrario a partir do servidor.
+    """
+    try:
+        partes = urlparse(url)
+    except ValueError:
+        return False
+    if partes.scheme not in ("http", "https"):
+        return False
+    return partes.hostname in ALLOWED_HOSTS
+
 
 def _page_title(html: str) -> str:
     match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
@@ -301,6 +363,46 @@ def _parse_game_page(html: str) -> list[SheetEntry]:
     return entries
 
 
+def _carregar_indice() -> list[SheetEntry]:
+    """
+    Le o indice do disco tolerando arquivo corrompido ou de versao antiga.
+
+    Devolve lista vazia quando nao da' para aproveitar — quem chama trata isso
+    reconstruindo o indice, em vez de propagar a excecao para a interface.
+    """
+    campos = {f.name for f in fields(SheetEntry)}
+    try:
+        raw = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
+        if not isinstance(raw, list):
+            return []
+        entradas = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            # Ignora chaves desconhecidas (indice gravado por outra versao)
+            filtrado = {k: v for k, v in item.items() if k in campos}
+            if "sheet_id" in filtrado and "name" in filtrado and "url" in filtrado:
+                entradas.append(SheetEntry(**filtrado))
+        return entradas
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return []
+
+
+def _gravar_indice(entries: list[SheetEntry]) -> None:
+    """
+    Grava o indice de forma atomica (arquivo temporario + rename).
+
+    Se o processo for interrompido no meio da escrita, o indice antigo
+    permanece intacto em vez de virar um arquivo pela metade.
+    """
+    conteudo = json.dumps(
+        [asdict(e) for e in entries], ensure_ascii=False, indent=2
+    )
+    temporario = INDEX_FILE.with_suffix(".json.tmp")
+    temporario.write_text(conteudo, encoding="utf-8")
+    temporario.replace(INDEX_FILE)
+
+
 def build_index(force: bool = False, client: SpritersClient | None = None) -> list[SheetEntry]:
     """
     Constroi (ou carrega do cache) o indice local de sprites.
@@ -311,8 +413,11 @@ def build_index(force: bool = False, client: SpritersClient | None = None) -> li
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     if INDEX_FILE.exists() and not force:
-        raw = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
-        return [SheetEntry(**item) for item in raw]
+        entradas = _carregar_indice()
+        if entradas:
+            return entradas
+        # Indice ilegivel (corrompido, truncado ou de uma versao antiga):
+        # segue adiante e reconstroi, em vez de derrubar o app.
 
     own_client = client is None
     client = client or SpritersClient()
@@ -339,10 +444,7 @@ def build_index(force: bool = False, client: SpritersClient | None = None) -> li
                 "ter mudado. Abra uma issue ou use a aba de upload manual. "
                 f"(titulo da pagina recebida: {_page_title(html)!r})"
             )
-        INDEX_FILE.write_text(
-            json.dumps([asdict(e) for e in entries], ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _gravar_indice(entries)
         return entries
     finally:
         if own_client:
@@ -410,7 +512,7 @@ def download_sheet(entry: SheetEntry, client: SpritersClient | None = None) -> P
         # 1) Endpoint direto de download
         try:
             data = client.get_bytes(f"{BASE_URL}/download/{entry.sheet_id}/")
-            if data[:8].startswith(b"\x89PNG"):
+            if _e_imagem(data):
                 target.write_bytes(data)
                 return target
         except Exception:
@@ -438,11 +540,16 @@ def download_sheet(entry: SheetEntry, client: SpritersClient | None = None) -> P
 
         for src in candidates:
             url = src if src.startswith("http") else BASE_URL + src
+            # As URLs vem do HTML de um site de terceiros. Sem esta checagem,
+            # um link para outro dominio faria o app buscar um host arbitrario
+            # (SSRF) — inclusive enderecos internos da rede onde ele roda.
+            if not _url_permitida(url):
+                continue
             try:
                 data = client.get_bytes(url)
             except Exception:
                 continue
-            if data[:8].startswith(b"\x89PNG") or data[:3] == b"GIF" or data[:2] == b"\xff\xd8":
+            if _e_imagem(data):
                 target.write_bytes(data)
                 return target
 

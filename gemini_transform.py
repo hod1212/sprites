@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 from PIL import Image
 
+from redact import redact
+
 load_dotenv()  # carrega GEMINI_API_KEY do arquivo .env, se existir
 
 # Modelo de edicao de imagem. Se o Google lancar um sucessor, basta trocar aqui.
@@ -692,9 +694,14 @@ def transform_sprite(
             # Chave recusada nao melhora com nova tentativa: avisa na hora.
             _raise_if_auth_error(exc)
             last_error = exc
-        time.sleep(2 ** attempt)
+        # Nao dorme depois da ultima tentativa: so' atrasaria o erro final.
+        if attempt < max_retries - 1:
+            time.sleep(2 ** attempt)
 
-    raise RuntimeError(f"Falha ao gerar imagem apos {max_retries} tentativas: {last_error}")
+    raise RuntimeError(
+        "Falha ao gerar imagem apos "
+        f"{max_retries} tentativas: {redact(str(last_error), api_key)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -869,9 +876,13 @@ def generate_action_sheet(
         except Exception as exc:
             _raise_if_auth_error(exc)
             last_error = exc
-        time.sleep(2 ** attempt)
+        # Nao dorme depois da ultima tentativa: so' atrasaria o erro final.
+        if attempt < max_retries - 1:
+            time.sleep(2 ** attempt)
 
-    raise RuntimeError(f"Falha ao gerar a tira de animacao: {last_error}")
+    raise RuntimeError(
+        f"Falha ao gerar a tira de animacao: {redact(str(last_error), api_key)}"
+    )
 
 
 def generate_action_frames(
@@ -920,7 +931,7 @@ def generate_action_frames(
             )
             resultados.append(FrameResult(i, image))
         except Exception as exc:
-            resultados.append(FrameResult(i, None, error=str(exc)))
+            resultados.append(FrameResult(i, None, error=redact(str(exc), api_key)))
     if progress_callback:
         progress_callback(n_frames, n_frames, "Concluido.")
     return resultados
@@ -955,8 +966,12 @@ def _single_image_call(
         except Exception as exc:
             _raise_if_auth_error(exc)
             last_error = exc
-        time.sleep(2 ** attempt)
-    raise RuntimeError(f"apos {max_retries} tentativas: {last_error}")
+        # Nao dorme depois da ultima tentativa: so' atrasaria o erro final.
+        if attempt < max_retries - 1:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(
+        f"apos {max_retries} tentativas: {redact(str(last_error), api_key)}"
+    )
 
 
 def _raise_if_auth_error(exc: Exception) -> None:
@@ -972,7 +987,7 @@ def _raise_if_auth_error(exc: Exception) -> None:
         raise RuntimeError(
             "A chave da API foi recusada pelo Google. Confira se voce copiou a "
             "chave inteira de https://aistudio.google.com/apikey e se a cota da "
-            f"conta esta ativa. (resposta do servidor: {exc})"
+            f"conta esta ativa. (resposta do servidor: {redact(str(exc))})"
         ) from exc
 
 

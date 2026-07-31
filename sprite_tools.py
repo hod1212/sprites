@@ -73,23 +73,35 @@ def _detect_background_color(rgba: np.ndarray) -> tuple[int, int, int] | None:
     return None
 
 
+# Se pelo menos esta fracao dos pixels ja e' transparente, entendemos que a
+# imagem usa alpha de verdade (e nao apenas anti-aliasing nas bordas).
+ALPHA_REAL_MIN_FRACAO = 0.02
+
+
 def remove_background(img: Image.Image) -> Image.Image:
     """
     Devolve a imagem em RGBA com o fundo transparente.
 
-    - Se a imagem ja tem transparencia real (alpha variado), so garante RGBA.
+    - Se a imagem JA usa transparencia de verdade, ela e' devolvida intacta.
+      Isso e' essencial: um PNG que ja tem fundo transparente mas cujos cantos
+      sao opacos (personagem preenchendo o quadro) teria a propria arte
+      apagada pelo "chroma key" abaixo.
     - Caso contrario, detecta a cor de fundo pelos cantos e a torna
       transparente com tolerancia (pega tambem os pixels de borda serrilhada).
     """
     rgba_img = img.convert("RGBA")
     rgba = np.array(rgba_img)
 
+    # Alpha ja usado como transparencia real? (nao confundir com o leve
+    # anti-aliasing das bordas, que atinge pouquissimos pixels)
     alpha = rgba[:, :, 3]
-    has_real_alpha = bool((alpha < 250).any())
+    fracao_transparente = float((alpha < 250).mean())
+    if fracao_transparente >= ALPHA_REAL_MIN_FRACAO:
+        return rgba_img
 
     bg = _detect_background_color(rgba)
     if bg is None:
-        return rgba_img if has_real_alpha else rgba_img
+        return rgba_img
 
     r, g, b = (rgba[:, :, i].astype(int) for i in range(3))
     mask = (
@@ -150,7 +162,10 @@ def slice_frames(
     de conteudo; dentro de cada faixa, projeta nas linhas; o retangulo
     resultante e' refinado para o bounding box exato do sprite.
     """
-    rgba = np.array(sheet.convert("RGBA"))
+    # Converte UMA vez: antes isso era refeito para cada quadro encontrado,
+    # o que reconvertia a folha inteira dezenas de vezes.
+    sheet_rgba = sheet.convert("RGBA")
+    rgba = np.array(sheet_rgba)
     alpha = (rgba[:, :, 3] > 16).astype(np.uint32)
 
     frames: list[Frame] = []
@@ -167,7 +182,7 @@ def slice_frames(
                 continue
             bx0, bx1 = x0 + int(cols[0]), x0 + int(cols[-1]) + 1
             by0, by1 = y0 + int(rows[0]), y0 + int(rows[-1]) + 1
-            crop = sheet.convert("RGBA").crop((bx0, by0, bx1, by1))
+            crop = sheet_rgba.crop((bx0, by0, bx1, by1))
             frames.append(Frame(image=crop, bbox=(bx0, by0, bx1, by1)))
             if len(frames) >= max_frames:
                 return frames
@@ -234,16 +249,16 @@ def annotate_frames(
     if escala > 1:
         base = base.resize((base.width * escala, base.height * escala), Image.NEAREST)
 
-    # Fundo xadrez claro, para o sprite transparente ficar visivel
-    fundo = Image.new("RGBA", base.size, (255, 255, 255, 255))
+    # Fundo xadrez claro, para o sprite transparente ficar visivel.
+    # Gerado com NumPy: desenhar quadrado a quadrado custava dezenas de
+    # milhares de chamadas ao Pillow em folhas grandes.
     quadrado = 8 * escala
-    desenho_fundo = ImageDraw.Draw(fundo)
-    for y in range(0, base.height, quadrado):
-        for x in range(0, base.width, quadrado):
-            if (x // quadrado + y // quadrado) % 2:
-                desenho_fundo.rectangle(
-                    [x, y, x + quadrado, y + quadrado], fill=(230, 230, 235, 255)
-                )
+    ys, xs = np.indices((base.height, base.width))
+    tabuleiro = ((xs // quadrado + ys // quadrado) % 2).astype(bool)
+    pixels = np.empty((base.height, base.width, 4), dtype=np.uint8)
+    pixels[...] = (255, 255, 255, 255)
+    pixels[tabuleiro] = (230, 230, 235, 255)
+    fundo = Image.fromarray(pixels, "RGBA")
     fundo.alpha_composite(base)
 
     d = ImageDraw.Draw(fundo)
@@ -366,14 +381,19 @@ def split_strip(strip: Image.Image, n_frames: int) -> list[Image.Image]:
     o modelo pode encostar dois quadros ou deixar um membro esticado entre
     eles — cai para a divisao em colunas iguais, que sempre devolve N quadros.
     """
+    if n_frames < 1:
+        raise ValueError("n_frames precisa ser pelo menos 1.")
     limpa = remove_background(strip)
+    # Nao adianta pedir mais quadros do que a tira tem pixels de largura.
+    n_frames = min(n_frames, max(1, limpa.width))
+
     detectados = slice_frames(limpa, min_size=max(8, limpa.width // (n_frames * 6)))
 
     if len(detectados) == n_frames:
         return [f.image for f in detectados]
 
     # Fallback: divide a largura em N faixas iguais e recorta o conteudo de cada
-    largura = limpa.width // n_frames
+    largura = max(1, limpa.width // n_frames)
     quadros: list[Image.Image] = []
     for i in range(n_frames):
         x0 = i * largura
@@ -420,6 +440,58 @@ def build_gif(
         disposal=2,
     )
     return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Carga segura de imagens (protecao de memoria)
+# ---------------------------------------------------------------------------
+
+# Um sheet legitimo de Ragnarok raramente passa de ~4 megapixels. Acima disso
+# provavelmente e' um arquivo inadequado — e cada copia RGBA custa 4 bytes por
+# pixel, com varias copias vivas ao mesmo tempo no pipeline. Sem este teto,
+# um PNG de 10000x10000 (400 MB por copia) derruba a sessao na nuvem.
+MAX_PIXELS_ENTRADA = 12_000_000  # 12 MP (~48 MB por copia RGBA)
+
+
+class ImagemInvalida(ValueError):
+    """Arquivo enviado nao e' uma imagem utilizavel."""
+
+
+def load_image_safely(
+    origem,
+    max_pixels: int = MAX_PIXELS_ENTRADA,
+) -> tuple[Image.Image, str]:
+    """
+    Abre uma imagem de forma defensiva, para arquivos vindos do usuario.
+
+    - Rejeita arquivos que nao sejam imagens, com mensagem clara em vez de
+      traceback.
+    - Reduz automaticamente imagens acima de `max_pixels`, protegendo a
+      memoria do servidor (uma folha de 10000x10000 ocuparia 400 MB por copia).
+
+    Devolve (imagem, aviso). `aviso` vem preenchido quando houve reducao.
+    """
+    try:
+        img = Image.open(origem)
+        img.load()  # forca a decodificacao agora, para o erro sair aqui
+    except Exception as exc:
+        raise ImagemInvalida(
+            "Nao consegui ler este arquivo como imagem. Envie um PNG, GIF, "
+            "BMP ou WEBP valido."
+        ) from exc
+
+    aviso = ""
+    pixels = img.width * img.height
+    if pixels > max_pixels:
+        fator = (max_pixels / pixels) ** 0.5
+        novo = (max(1, int(img.width * fator)), max(1, int(img.height * fator)))
+        aviso = (
+            f"A imagem enviada e' muito grande ({img.width}x{img.height} px). "
+            f"Reduzi para {novo[0]}x{novo[1]} px para nao esgotar a memoria."
+        )
+        img = img.resize(novo, Image.LANCZOS)
+
+    return img, aviso
 
 
 def save_png(img: Image.Image, path: str | Path) -> Path:
