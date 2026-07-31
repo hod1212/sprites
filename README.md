@@ -158,6 +158,53 @@ O navegador abre automaticamente em `http://localhost:8501`. Fluxo de uso:
 
 ---
 
+## 🚧 Se a busca automática não funcionar (Cloudflare)
+
+O Spriters Resource usa **Cloudflare**, que bloqueia programas — mas **não
+bloqueia pessoas**. É por isso que o site abre normalmente no seu navegador
+e falha no app. Não é defeito da ferramenta, e não há solução automática
+100% confiável para isso.
+
+### O caminho garantido: baixar pelo navegador
+
+Quando a busca falha, o app mostra um **assistente** que:
+
+1. Traduz o que você digitou para inglês (o site nomeia tudo em inglês —
+   "Algoz" → `assassin cross`);
+2. Entrega **links prontos** para a página do Ragnarok no site e para uma
+   busca no Google restrita a ele;
+3. Explica o passo a passo: achar o sheet → botão direito na imagem →
+   *"Salvar imagem como..."* → soltar o arquivo na aba de upload.
+
+A aba de upload aceita **vários arquivos de uma vez**, então dá para baixar
+um lote de sprites numa ida só e escolher qual usar dentro do app.
+
+### Tentativas automáticas (em ordem)
+
+O scraper tenta quatro rotas antes de desistir:
+
+| # | Rota | Observação |
+| :-: | --- | --- |
+| 1 | `requests` direto | Rápido; quase sempre barrado pelo Cloudflare |
+| 2 | `cloudscraper` | Resolve alguns desafios sem navegador |
+| 3 | **Playwright** (Chromium real) | Melhor chance em computador pessoal |
+| 4 | **Wayback Machine** | Cópia pública arquivada, sem Cloudflare |
+
+> ⚠️ A rota 4 (arquivo público) **não pôde ser validada** no ambiente de
+> desenvolvimento, porque a rede de lá bloqueia o archive.org. Ela é uma
+> tentativa extra e sem efeito colateral: se falhar, o app cai no assistente
+> manual como antes.
+
+### E as outras fontes de sprites?
+
+| Fonte | Vale a pena? |
+| --- | --- |
+| **Cliente do RO (`data.grf`)** | A melhor fonte se você **já tem o jogo instalado** — contém todos os sprites originais, sem depender de rede. Exige um extrator de GRF. |
+| **Repositórios públicos no GitHub** | Existem dumps de sprites usados por servidores privados; acessíveis sem Cloudflare, mas de licença e procedência variáveis. |
+| **Packs livres (OpenGameArt, itch.io)** | Não são do RO, mas são **CC0/livres** — a escolha certa se um dia você quiser publicar o jogo. |
+
+---
+
 ## 🤖 Motores de IA: Gemini x Pollinations (grátis)
 
 O app tem um seletor **"Motor de IA"** com duas opções:

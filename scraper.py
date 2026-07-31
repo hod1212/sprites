@@ -134,6 +134,54 @@ class SpritersClient:
             pass
         return None
 
+    # -- Wayback Machine (arquivo publico, sem Cloudflare) ------------------
+    #
+    # O Cloudflare barra servidores, mas o archive.org guarda copias publicas
+    # das paginas e nao usa essa protecao. Quando o acesso direto falha, vale
+    # tentar a copia arquivada: ela costuma bastar para reconstruir o INDICE
+    # (nomes e links dos sheets), que e' o que permite a busca funcionar.
+    #
+    # OBSERVACAO HONESTA: nao foi possivel validar esta rota no ambiente de
+    # desenvolvimento (a rede de la' bloqueia o archive.org). Ela e' uma
+    # tentativa a mais, barata e sem efeito colateral: se falhar, o fluxo
+    # segue para as camadas seguintes exatamente como antes.
+
+    WAYBACK_API = "https://archive.org/wayback/available"
+
+    def _try_wayback(self, url: str) -> str | None:
+        try:
+            disponivel = requests.get(
+                self.WAYBACK_API,
+                params={"url": url},
+                headers={"User-Agent": BROWSER_HEADERS["User-Agent"]},
+                timeout=25,
+            )
+            if disponivel.status_code != 200:
+                return None
+            snapshot = (
+                disponivel.json()
+                .get("archived_snapshots", {})
+                .get("closest", {})
+            )
+            if not snapshot.get("available") or not snapshot.get("url"):
+                return None
+
+            # O sufixo "id_" devolve o HTML ORIGINAL, sem a barra de navegacao
+            # nem a reescrita de links do arquivo — ideal para o nosso parser.
+            arquivada = re.sub(
+                r"/web/(\d+)/", r"/web/\1id_/", snapshot["url"], count=1
+            )
+            resp = requests.get(
+                arquivada,
+                headers={"User-Agent": BROWSER_HEADERS["User-Agent"]},
+                timeout=45,
+            )
+            if resp.status_code == 200 and "/sheet/" in resp.text:
+                return resp.text
+        except (requests.RequestException, ValueError, KeyError):
+            pass
+        return None
+
     # -- Playwright ---------------------------------------------------------
 
     def _ensure_browser(self):
@@ -207,7 +255,25 @@ class SpritersClient:
         html = self._try_cloudscraper(url)
         if html:
             return html
-        return self._playwright_html(url)
+        # Navegador real primeiro (conteudo sempre atual); se o Cloudflare
+        # barrar, a copia arquivada e' a ultima chance.
+        try:
+            html = self._playwright_html(url)
+            if html and "/sheet/" in html:
+                return html
+        except Exception:
+            html = None
+
+        arquivado = self._try_wayback(url)
+        if arquivado:
+            return arquivado
+
+        if html:
+            return html  # devolve o que veio, para o diagnostico ser preciso
+        raise RuntimeError(
+            "Nenhuma das rotas de acesso funcionou (direta, cloudscraper, "
+            "navegador e copia arquivada)."
+        )
 
     def get_bytes(self, url: str) -> bytes:
         data = self._try_requests_bytes(url)

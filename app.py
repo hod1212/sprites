@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import io
 import traceback
+import urllib.parse
 import zipfile
 
 import streamlit as st
@@ -37,6 +38,7 @@ from PIL import Image
 import pollinations_ai
 import scraper
 import sprite_tools
+from keywords import translate_query
 from redact import redact
 from gemini_transform import (
     ACTIONS,
@@ -351,6 +353,51 @@ base_sprite: Image.Image | None = None
 original_label = ""
 selecao: dict = {}
 
+def assistente_download_manual(termo_usuario: str = "") -> None:
+    """
+    Guia o usuario a pegar o sprite pelo proprio navegador.
+
+    Por que isto existe: o Cloudflare bloqueia SERVIDORES, nao pessoas. O
+    navegador do usuario abre o Spriters Resource normalmente — entao, quando
+    a busca automatica falha, o caminho garantido e' ele baixar o PNG e
+    envia-lo aqui. Traduzimos o termo para ingles (keywords.py) e montamos os
+    links prontos, para ele nao precisar descobrir o nome da classe em ingles.
+    """
+    termos_en = translate_query(termo_usuario) if termo_usuario.strip() else []
+    termo_busca = termos_en[0] if termos_en else "knight"
+
+    url_pagina_ro = scraper.GAME_URL
+    url_busca_google = (
+        "https://www.google.com/search?q="
+        + urllib.parse.quote(f"site:spriters-resource.com ragnarok {termo_busca}")
+    )
+
+    with st.container(border=True):
+        st.markdown("#### 📥 Como pegar o sprite pelo seu navegador (sempre funciona)")
+        st.caption(
+            "O Cloudflare bloqueia programas, mas **não bloqueia você**. "
+            "Abrindo o site no navegador, o download funciona normalmente."
+        )
+        if termos_en:
+            st.markdown(
+                f"🔤 Seu termo em inglês (é assim que o site nomeia): "
+                f"**{', '.join(termos_en[:4])}**"
+            )
+        st.markdown(
+            f"""
+1. Abra a **[página do Ragnarok Online no Spriters Resource]({url_pagina_ro})**
+   (ou vá direto pela **[busca no Google]({url_busca_google})**).
+2. Ache o personagem e clique no spritesheet.
+3. Clique com o **botão direito na imagem grande → "Salvar imagem como..."**.
+4. Volte aqui, abra a aba **📁 Enviar meu próprio sprite** e solte o arquivo.
+"""
+        )
+        st.info(
+            "💡 Baixe vários de uma vez — a aba de upload aceita mais de um "
+            "arquivo, e você escolhe qual usar."
+        )
+
+
 # --- Aba 1: busca no site ---------------------------------------------------
 
 with tab_search:
@@ -366,15 +413,22 @@ with tab_search:
             results = scraper.search_sheets(query, [scraper.SheetEntry(**d) for d in index])
         except Exception as exc:
             st.error(
-                f"Não consegui acessar o Spriters Resource: {redact(str(exc))}\n\n"
-                "💡 O site usa proteção Cloudflare. Verifique se o Playwright está "
-                "instalado (`playwright install chromium`) ou use a aba "
-                "**Enviar meu próprio sprite**."
+                "🚧 A busca automática não conseguiu acessar o Spriters "
+                "Resource. O site usa proteção Cloudflare, que bloqueia "
+                "programas — e isso acontece tanto na nuvem quanto em muitos "
+                "computadores. **Não é problema do seu app.**"
             )
+            with st.expander("Detalhe técnico"):
+                st.code(redact(str(exc)))
+            assistente_download_manual(query)
             results = []
 
         if query and not results:
-            st.warning("Nenhum sprite encontrado. Tente outro termo (em português ou inglês).")
+            st.warning(
+                "Nenhum sprite encontrado no índice. Tente outro termo — ou "
+                "pegue direto pelo navegador:"
+            )
+            assistente_download_manual(query)
 
         if results:
             options = {f"{e.name}  ({e.section})" if e.section else e.name: e for e in results}
@@ -400,10 +454,26 @@ with tab_search:
 # --- Aba 2: upload manual (fallback para quando o site bloquear) ------------
 
 with tab_upload:
-    uploaded = st.file_uploader(
-        "Envie um spritesheet ou sprite avulso (PNG/GIF/BMP)",
+    enviados = st.file_uploader(
+        "Envie um ou vários spritesheets (PNG/GIF/BMP/WEBP)",
         type=["png", "gif", "bmp", "webp"],
+        accept_multiple_files=True,
+        help="Pode soltar vários arquivos de uma vez — assim você baixa tudo "
+        "do site em uma ida só e escolhe aqui qual usar.",
     )
+    uploaded = None
+    if enviados:
+        if len(enviados) == 1:
+            uploaded = enviados[0]
+        else:
+            nomes = [f.name for f in enviados]
+            escolhido = st.selectbox(
+                f"📚 {len(enviados)} arquivos enviados — qual usar agora?",
+                nomes,
+                key="qual_upload",
+            )
+            uploaded = enviados[nomes.index(escolhido)]
+
     if uploaded is not None:
         try:
             img, aviso = sprite_tools.load_image_safely(uploaded)
